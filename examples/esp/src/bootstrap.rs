@@ -18,6 +18,8 @@ use esp_hal::timer::timg::TimerGroup;
 
 use mbedtls_rs::sys::accel::esp::EspAccel;
 use mbedtls_rs::Tls;
+use mbedtls_rs::sys::clock::esp::EspRtcWallClock;
+use mbedtls_rs::sys::timer::embassy::EmbassyTimer;
 
 use esp_metadata_generated::memory_range;
 
@@ -51,6 +53,7 @@ esp_bootloader_esp_idf::esp_app_desc!();
 
 const WIFI_SSID: &str = env!("WIFI_SSID");
 const WIFI_PASS: &str = env!("WIFI_PASS");
+const CURRENT_TIME_MS: &str = env!("CURRENT_TIME_MS");
 
 pub async fn bootstrap_stack<const SOCKETS: usize>(
     spawner: Spawner,
@@ -71,6 +74,35 @@ pub async fn bootstrap_stack<const SOCKETS: usize>(
         esp_hal::interrupt::software::SoftwareInterruptControl::new(peripherals.SW_INTERRUPT)
             .software_interrupt0,
     );
+
+    // TODO feature gate?
+    {
+        let timer = mk_static!(EmbassyTimer, EmbassyTimer::default());
+        unsafe {
+            mbedtls_rs::sys::hook::timer::hook_timer(Some(timer));
+        }
+    }
+
+    // TODO feature gate?
+    {
+        let rtc = mk_static!(
+            esp_hal::rtc_cntl::Rtc,
+            esp_hal::rtc_cntl::Rtc::new(peripherals.LPWR)
+        );
+
+        // In a real-life scenario NTP or equivalent should be used here to initialize the RTC
+        rtc.set_current_time_us(
+            CURRENT_TIME_MS
+                .parse::<u64>()
+                .expect("Failed to parse CURRENT_TIME_MS")
+                * 1000, // Convert milliseconds to microseconds
+        );
+
+        let clock = mk_static!(EspRtcWallClock, EspRtcWallClock::new(rtc));
+        unsafe {
+            mbedtls_rs::sys::hook::wall_clock::hook_wall_clock(Some(clock));
+        }
+    }
 
     #[cfg(not(any(feature = "esp32", feature = "esp32c2")))]
     let accel = EspAccel::new(peripherals.SHA, peripherals.RSA);

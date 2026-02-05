@@ -30,6 +30,16 @@ accel-esp32h2 = ["mbedtls-rs-sys/accel-esp32h2"]
 accel-esp32s2 = ["mbedtls-rs-sys/accel-esp32s2"]
 accel-esp32s3 = ["mbedtls-rs-sys/accel-esp32s3"]
 
+timer-embassy = ["mbedtls-rs-sys/timer-embassy"]
+
+wall-clock-esp32 = ["mbedtls-rs-sys/wall-clock-esp32"]
+wall-clock-esp32c2 = ["mbedtls-rs-sys/wall-clock-esp32c2"]
+wall-clock-esp32c3 = ["mbedtls-rs-sys/wall-clock-esp32c3"]
+wall-clock-esp32c6 = ["mbedtls-rs-sys/wall-clock-esp32c6"]
+wall-clock-esp32h2 = ["mbedtls-rs-sys/wall-clock-esp32h2"]
+wall-clock-esp32s2 = ["mbedtls-rs-sys/wall-clock-esp32s2"]
+wall-clock-esp32s3 = ["mbedtls-rs-sys/wall-clock-esp32s3"]
+
 [dependencies]
 mbedtls-rs-sys = { path = "../mbedtls-rs-sys", default-features = false }
 defmt = { version = "1", optional = true }

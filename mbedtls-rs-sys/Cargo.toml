@@ -20,11 +20,13 @@ use-gcc = []
 # https://github.com/riscv-collab/riscv-gnu-toolchain
 force-esp-riscv-gcc = ["use-gcc"]
 # Disable all or some hooks; this would preclude hooking custom HW-accelerated algos
-nohook = ["nohook-sha1", "nohook-sha256", "nohook-sha512", "nohook-exp-mod"]
+nohook = ["nohook-sha1", "nohook-sha256", "nohook-sha512", "nohook-exp-mod", "nohook-timer", "nohook-wall-clock"]
 nohook-sha1 = []
 nohook-sha256 = []
 nohook-sha512 = []
 nohook-exp-mod = []
+nohook-timer = []
+nohook-wall-clock = []
 # Enable HW acceleration drivers for the ESP series of MCUs via `esp-hal`
 accel-esp32 = ["esp-hal/esp32", "crypto-bigint"]
 accel-esp32c2 = ["esp-hal/esp32c2"]
@@ -33,6 +35,15 @@ accel-esp32c6 = ["esp-hal/esp32c6", "crypto-bigint"]
 accel-esp32h2 = ["esp-hal/esp32h2", "crypto-bigint"]
 accel-esp32s2 = ["esp-hal/esp32s2", "crypto-bigint"]
 accel-esp32s3 = ["esp-hal/esp32s3", "crypto-bigint"]
+
+timer-embassy = ["embassy-time"]
+wall-clock-esp32 = ["esp-hal/esp32", "time"]
+wall-clock-esp32c2 = ["esp-hal/esp32c2", "time"]
+wall-clock-esp32c3 = ["esp-hal/esp32c3", "time"]
+wall-clock-esp32c6 = ["esp-hal/esp32c6", "time"]
+wall-clock-esp32h2 = ["esp-hal/esp32h2", "time"]
+wall-clock-esp32s2 = ["esp-hal/esp32s2", "time"]
+wall-clock-esp32s3 = ["esp-hal/esp32s3", "time"]
 
 [dependencies]
 defmt = { version = "1", optional = true }
@@ -43,11 +54,15 @@ digest = { version = "0.10", default-features = false }
 sha1 = { version = "0.10", default-features = false }
 # For some reason, `soft` results in enormous slowdowns on xtensa and riscv32
 sha2 = { version = "0.10", default-features = false, features = ["force-soft-compact"] }
+time = { version = "0.3", default-features = false, optional = true }
 critical-section = "1"
 
 # For esp-hal accel
 esp-hal = { version = "1", features = ["unstable"], optional = true }
 crypto-bigint = { version = "0.5.3", default-features = false, features = ["extra-sizes"], optional = true }
+
+# For embassy timer support
+embassy-time = {version = "0.5.0", optional = true}
 
 # ESP-IDF: The mbedtls lib distributed with ESP-IDF is used
 # All other platforms: mbedtls libs and bindings are created on the fly

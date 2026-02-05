@@ -17,6 +17,10 @@ pub enum Hook {
     Sha512,
     /// MPI modular exponentiation
     ExpMod,
+    /// Timer support
+    Timer,
+    /// Wall clock support
+    WallClock,
 }
 
 /// The MbedTLS builder
@@ -156,12 +160,14 @@ impl MbedtlsBuilder {
         }
 
         for hook in self.hooks {
-            let def = self.hook_def(hook);
+            let defs = self.hook_defs(hook);
 
-            builder = builder.clang_arg(format!("-D{def}"));
+            for def in defs {
+                builder = builder.clang_arg(format!("-D{def}"));
 
-            if let Some(size_def) = self.hook_work_area_size_def(hook) {
-                builder = builder.clang_arg(format!("-D{def}_WORK_AREA_SIZE={size_def}"));
+                if let Some(size_def) = self.hook_work_area_size_def(hook) {
+                    builder = builder.clang_arg(format!("-D{def}_WORK_AREA_SIZE={size_def}"));
+                }
             }
         }
 
@@ -234,14 +240,16 @@ impl MbedtlsBuilder {
             .out_dir(&target_dir);
 
         for hook in self.hooks {
-            let def = self.hook_def(hook);
+            let defs = self.hook_defs(hook);
 
-            config.cflag(format!("-D{def}")).cxxflag(format!("-D{def}"));
+            for def in defs {
+                config.cflag(format!("-D{def}")).cxxflag(format!("-D{def}"));
 
-            if let Some(size_def) = self.hook_work_area_size_def(hook) {
-                config
-                    .cflag(format!("-D{def}_WORK_AREA_SIZE={size_def}"))
-                    .cxxflag(format!("-D{def}_WORK_AREA_SIZE={size_def}"));
+                if let Some(size_def) = self.hook_work_area_size_def(hook) {
+                    config
+                        .cflag(format!("-D{def}_WORK_AREA_SIZE={size_def}"))
+                        .cxxflag(format!("-D{def}_WORK_AREA_SIZE={size_def}"));
+                }
             }
         }
 
@@ -256,12 +264,18 @@ impl MbedtlsBuilder {
         println!("cargo::rerun-if-changed={}", file_or_dir.display())
     }
 
-    fn hook_def(&self, hook: Hook) -> &'static str {
+    fn hook_defs(&self, hook: Hook) -> &'static [&'static str] {
         match hook {
-            Hook::Sha1 => "MBEDTLS_SHA1_ALT",
-            Hook::Sha256 => "MBEDTLS_SHA256_ALT",
-            Hook::Sha512 => "MBEDTLS_SHA512_ALT",
-            Hook::ExpMod => "MBEDTLS_MPI_EXP_MOD_ALT_FALLBACK",
+            Hook::Sha1 => &["MBEDTLS_SHA1_ALT"],
+            Hook::Sha256 => &["MBEDTLS_SHA256_ALT"],
+            Hook::Sha512 => &["MBEDTLS_SHA512_ALT"],
+            Hook::ExpMod => &["MBEDTLS_MPI_EXP_MOD_ALT_FALLBACK"],
+            Hook::Timer => &[
+                "MBEDTLS_HAVE_TIME",
+                "MBEDTLS_PLATFORM_TIME_ALT",
+                "MBEDTLS_PLATFORM_MS_TIME_ALT",
+            ],
+            Hook::WallClock => &["MBEDTLS_HAVE_TIME_DATE", "MBEDTLS_PLATFORM_GMTIME_R_ALT"],
         }
     }
 
