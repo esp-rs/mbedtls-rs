@@ -1,11 +1,8 @@
-use std::env;
 use std::path::PathBuf;
 
 use anyhow::Result;
 
 use clap::{Parser, Subcommand};
-
-use enumset::EnumSet;
 
 use log::LevelFilter;
 
@@ -39,6 +36,14 @@ enum Commands {
         #[arg(short = 'e', long = "force-esp-riscv-gcc")]
         force_esp_riscv_gcc: bool,
 
+        /// Enable timer hook support
+        #[arg(long = "timer")]
+        timer: bool,
+
+        /// Enable wall clock hook support
+        #[arg(long = "wall-clock")]
+        wall_clock: bool,
+
         /// Target triple for which to generate bindings and `.a` libraries
         target: String,
     },
@@ -62,6 +67,8 @@ fn main() -> Result<()> {
         target,
         use_gcc,
         force_esp_riscv_gcc,
+        timer,
+        wall_clock,
     }) = args.command
     {
         let use_gcc = use_gcc || force_esp_riscv_gcc;
@@ -69,8 +76,17 @@ fn main() -> Result<()> {
         // For clang, use our own cross-platform sysroot
         let sysroot = (!use_gcc).then(|| sys_crate_root_path.join("gen").join("sysroot"));
 
+        // Build hooks set based on CLI flags
+        let mut hooks = builder::DEFAULT_HOOKS;
+        if timer {
+            hooks |= builder::Hook::Timer;
+        }
+        if wall_clock {
+            hooks |= builder::Hook::WallClock;
+        }
+
         let builder = builder::MbedtlsBuilder::new(
-            EnumSet::all(),
+            hooks,
             !use_gcc,
             sys_crate_root_path.clone(),
             Some(target.clone()),
@@ -101,6 +117,7 @@ fn main() -> Result<()> {
                     .join(format!("{target}.rs")),
             ),
         )?;
+
     }
 
     Ok(())

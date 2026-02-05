@@ -138,7 +138,7 @@ jobs:
           echo "${LIBCLANG_PATH}/../bin:$PATH" >> "$GITHUB_PATH"
           echo "LIBCLANG_PATH=${LIBCLANG_PATH}" >> "$GITHUB_ENV"
           echo "CLANG_PATH=${CLANG_PATH}" >> "$GITHUB_ENV"
-  
+
 # TODO: Remove the manual espup installation and run once the action below
 # supports the `-r` flag to install the Espressif RISCV GCC toolchain
 # See https://github.com/esp-rs/xtensa-toolchain/issues/45 for more info
@@ -175,7 +175,7 @@ jobs:
           retention-days: 1
           path: |
             mbedtls-rs-sys/libs
-            mbedtls-rs-sys/src
+            mbedtls-rs-sys/src/include
 
   build-mcu:
     name: Build-MCU
@@ -229,6 +229,30 @@ jobs:
 
       - name: Fmt Check - Examples
         run: cd examples/${{ matrix.mcu[0] }}; cargo fmt -- --check
+
+      - name: mbedtls init
+        run: git submodule update --init --recursive
+
+      - name: Detect host target triple
+        run: |
+          export HOST_TARGET=$(rustup show | grep "Default host" | sed -e 's/.* //')
+          echo "HOST_TARGET=$HOST_TARGET" >> $GITHUB_ENV
+
+      - name: Install espup
+        run: |
+          curl -LO https://github.com/esp-rs/espup/releases/latest/download/espup-${{ env.HOST_TARGET }}.zip
+          unzip -o espup-${{ env.HOST_TARGET }}.zip -d "$HOME/.cargo/bin"
+          chmod +x "$HOME/.cargo/bin/espup"*
+          echo "ESPUP_EXPORT_FILE=$HOME/exports" >> $GITHUB_ENV
+
+      - name: Install espup toolchains (xtensa and riscv)
+        run: |
+          source "$HOME/.cargo/env"
+          "$HOME/.cargo/bin/espup" install -e -r
+          source "$HOME/exports"
+          echo "${LIBCLANG_PATH}/../bin:$PATH" >> "$GITHUB_PATH"
+          echo "LIBCLANG_PATH=${LIBCLANG_PATH}" >> "$GITHUB_ENV"
+          echo "CLANG_PATH=${CLANG_PATH}" >> "$GITHUB_ENV"
 
       - name: Clippy - Examples
         run: export WIFI_SSID=ssid; export WIFI_PASS=pass; cd examples/${{ matrix.mcu[0] }}; cargo clippy --no-default-features --features ${{ matrix.mcu[1] }} --target ${{ matrix.mcu[2] }} -Zbuild-std=core,alloc,panic_abort -- -D warnings

@@ -1,9 +1,7 @@
+use anyhow::Result;
 use std::{env, path::PathBuf};
 
-use anyhow::Result;
-use enumset::EnumSet;
-
-use crate::builder::Hook;
+use crate::builder::{Hook, MbedtlsBuilder};
 
 #[path = "gen/builder.rs"]
 mod builder;
@@ -11,8 +9,8 @@ mod builder;
 fn main() -> Result<()> {
     let crate_root_path = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
 
-    builder::MbedtlsBuilder::track(&crate_root_path.join("gen"));
-    builder::MbedtlsBuilder::track(&crate_root_path.join("mbedtls"));
+    MbedtlsBuilder::track(&crate_root_path.join("gen"));
+    MbedtlsBuilder::track(&crate_root_path.join("mbedtls"));
 
     let host = env::var("HOST").unwrap();
     let target = env::var("TARGET").unwrap();
@@ -27,9 +25,8 @@ fn main() -> Result<()> {
         .join(format!("{target}.rs"));
     let pregen_libs_dir = crate_root_path.join("libs").join(&target);
 
-    // Figure out what MbedTLS hook options (ALT modules) to enable
-    let mut removed_hooks = EnumSet::empty();
-
+    // Figure out what MbedTLS hook options to enable
+    let mut hooks = builder::DEFAULT_HOOKS;
     for (feature, hook) in [
         ("CARGO_FEATURE_NOHOOK_SHA1", Hook::Sha1),
         ("CARGO_FEATURE_NOHOOK_SHA256", Hook::Sha256),
@@ -37,11 +34,22 @@ fn main() -> Result<()> {
         ("CARGO_FEATURE_NOHOOK_EXP_MOD", Hook::ExpMod),
     ] {
         if env::var(feature).is_ok() {
-            removed_hooks.insert(hook);
+            hooks.remove(hook);
         }
     }
 
-    let dirs = if pregen_bindings && pregen_bindings_rs_file.exists() && removed_hooks.is_empty() {
+    for (feature, hook) in [
+        ("CARGO_FEATURE_HOOK_TIMER", Hook::Timer),
+        ("CARGO_FEATURE_HOOK_WALL_CLOCK", Hook::WallClock),
+    ] {
+        if env::var(feature).is_ok() {
+            hooks.insert(hook);
+        }
+    }
+
+    let hooks_changed = hooks != builder::DEFAULT_HOOKS;
+
+    let dirs = if pregen_bindings && pregen_bindings_rs_file.exists() && !hooks_changed {
         // Use the pre-generated bindings
         Some((pregen_bindings_rs_file, pregen_libs_dir))
     } else if target.ends_with("-espidf") {
@@ -50,9 +58,9 @@ fn main() -> Result<()> {
     } else {
         if pregen_bindings_rs_file.exists() {
             if !pregen_bindings {
-                println!("cargo::warning=Forcing on-the-fly build for target {target}");
+                println!("cargo::warning=Forcing on-the-fly build for target {target} as bindings are not available.");
             } else {
-                println!("cargo::warning=Forcing on-the-fly build for {target} because some or all hooks are disabled: {removed_hooks:?}");
+                println!("cargo::warning=Forcing on-the-fly build for {target} because hooks don't match default. Enabled hooks: {hooks:?}.");
             }
         }
 
@@ -62,8 +70,8 @@ fn main() -> Result<()> {
         // Need to do on-the-fly build and bindings' generation
         let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
 
-        let builder = builder::MbedtlsBuilder::new(
-            removed_hooks.complement(),
+        let builder = MbedtlsBuilder::new(
+            hooks,
             !use_gcc,
             crate_root_path.clone(),
             Some(target),

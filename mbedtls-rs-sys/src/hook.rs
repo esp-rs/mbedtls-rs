@@ -1,15 +1,19 @@
-//! This module allows for replacing (hooking) some crypto algorithms in MbedTLS
-//! with custom ones.
+//! This module allows for replacing (hooking) some crypto algorithms and timer/clock
+//! functionality in MbedTLS with custom implementations.
 //!
-//! The primary purpose being providing hardware-accelerated equivalents on platforms
-//! that support it.
+//! This enables providing hardware-accelerated crypto or platform-specific time sources
+//! on platforms that support it.
 //!
-//! NOTE: When hooking for some/all algorithms is enabled, those that remain "un-hooked"
-//! by the user will NOT use the software implementations provided by MbedTLS,
+//! NOTE: For crypto algorithms specifically, when hooking is enabled, those that remain
+//! "un-hooked" by the user will NOT use the software implementations provided by MbedTLS,
 //! but rather - RustCrypto based ones!
 
 pub mod digest;
 pub mod exp_mod;
+#[cfg(feature = "hook-timer")]
+pub mod timer;
+#[cfg(feature = "hook-wall-clock")]
+pub mod wall_clock;
 
 /// The work area memory type used by MbedTLS algorithms' hooks
 pub type WorkAreaMemory = [u8];

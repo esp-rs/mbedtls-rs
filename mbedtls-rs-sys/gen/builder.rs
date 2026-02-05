@@ -1,3 +1,4 @@
+use std::option::Option;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -5,7 +6,11 @@ use self::config::MbedtlsUserConfig;
 use anyhow::{anyhow, Result};
 use bindgen::Builder;
 use cmake::Config;
-use enumset::{EnumSet, EnumSetType};
+use enumset::{enum_set, EnumSet, EnumSetType};
+
+// This set MUST contain all opt-out hooks
+pub const DEFAULT_HOOKS: EnumSet<Hook> =
+    enum_set!(Hook::Sha1 | Hook::Sha256 | Hook::Sha512 | Hook::ExpMod);
 
 mod config;
 
@@ -20,6 +25,10 @@ pub enum Hook {
     Sha512,
     /// MPI modular exponentiation
     ExpMod,
+    /// Timer support
+    Timer,
+    /// Wall clock support
+    WallClock,
 }
 
 impl Hook {
