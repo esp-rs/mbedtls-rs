@@ -87,7 +87,7 @@ mod alt {
                     *tm_buf = wc.instant();
                     tm_buf
                 })
-                .unwrap_or(ptr::null_mut())
+                .unwrap_or_default()
         })
     }
 }
