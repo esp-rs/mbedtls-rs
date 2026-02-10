@@ -17,9 +17,9 @@ use esp_hal::rng::TrngSource;
 use esp_hal::timer::timg::TimerGroup;
 
 use mbedtls_rs::sys::accel::esp::EspAccel;
-use mbedtls_rs::Tls;
 use mbedtls_rs::sys::clock::esp::EspRtcWallClock;
 use mbedtls_rs::sys::timer::embassy::EmbassyTimer;
+use mbedtls_rs::Tls;
 
 use esp_metadata_generated::memory_range;
 
