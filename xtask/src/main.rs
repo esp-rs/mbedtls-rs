@@ -5,8 +5,6 @@ use anyhow::Result;
 
 use clap::{Parser, Subcommand};
 
-use enumset::EnumSet;
-
 use log::LevelFilter;
 
 use tempdir::TempDir;
@@ -70,7 +68,7 @@ fn main() -> Result<()> {
         let sysroot = (!use_gcc).then(|| sys_crate_root_path.join("gen").join("sysroot"));
 
         let builder = builder::MbedtlsBuilder::new(
-            EnumSet::all(),
+            None,
             !use_gcc,
             sys_crate_root_path.clone(),
             Some(target.clone()),

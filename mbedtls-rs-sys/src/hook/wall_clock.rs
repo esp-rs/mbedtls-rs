@@ -22,7 +22,7 @@ pub trait MbedtlsWallClock {
 ///   any MbedTLS functions that need wall clock time (e.g., X.509 certificate
 ///   time validation), and ensure that the wall clock implementation is valid
 ///   for the duration of its use.
-#[cfg(not(feature = "nohook-wall-clock"))]
+#[cfg(feature = "hook-wall-clock")]
 pub unsafe fn hook_wall_clock(wc: Option<&'static (dyn MbedtlsWallClock + Send + Sync)>) {
     critical_section::with(|cs| {
         #[allow(clippy::if_same_then_else)]
@@ -36,7 +36,7 @@ pub unsafe fn hook_wall_clock(wc: Option<&'static (dyn MbedtlsWallClock + Send +
     });
 }
 
-#[cfg(not(feature = "nohook-wall-clock"))]
+#[cfg(feature = "hook-wall-clock")]
 mod alt {
     use crate::bindings::tm;
     use core::cell::Cell;

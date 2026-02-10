@@ -1,10 +1,11 @@
+use std::option::Option;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{anyhow, Result};
 use bindgen::Builder;
 use cmake::Config;
-use enumset::{EnumSet, EnumSetType};
+use enumset::{enum_set, EnumSet, EnumSetType};
 
 /// What hooks to install in MbedTLS
 #[derive(EnumSetType, Debug)]
@@ -34,10 +35,12 @@ pub struct MbedtlsBuilder {
 }
 
 impl MbedtlsBuilder {
+    pub const DEFAULT_HOOKS: EnumSet<Hook> =
+        enum_set!(Hook::Sha1 | Hook::Sha256 | Hook::Sha512 | Hook::ExpMod);
     /// Create a new MbedtlsBuilder
     ///
     /// Arguments:
-    /// - `hooks` - Set of algorithm hooks to enable
+    /// - `hooks` - Set of algorithm hooks to enable. If not specified, DEFAULT_HOOKS will be used.
     /// - `force_clang`: If true, force the use of Clang as the C/C++ compiler
     /// - `crate_root_path`: Path to the root of the crate
     /// - `cmake_rust_target`: Optional target for CMake when building MbedTLS, with Rust target-triple syntax. If not specified, the "TARGET" env variable will be used
@@ -51,7 +54,7 @@ impl MbedtlsBuilder {
     ///   (https://github.com/riscv-collab/riscv-gnu-toolchain)
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        hooks: EnumSet<Hook>,
+        hooks: Option<EnumSet<Hook>>,
         force_clang: bool,
         crate_root_path: PathBuf,
         cmake_rust_target: Option<String>,
@@ -62,7 +65,7 @@ impl MbedtlsBuilder {
         force_esp_riscv_gcc: bool,
     ) -> Self {
         Self {
-            hooks,
+            hooks: hooks.unwrap_or(Self::DEFAULT_HOOKS),
             cmake_configurer: CMakeConfigurer::new(
                 force_clang,
                 clang_sysroot_path.clone(),

@@ -23,8 +23,10 @@ nohook-sha1 = ["mbedtls-rs-sys/nohook-sha1"]
 nohook-sha256 = ["mbedtls-rs-sys/nohook-sha256"]
 nohook-sha512 = ["mbedtls-rs-sys/nohook-sha512"]
 nohook-exp-mod = ["mbedtls-rs-sys/nohook-exp-mod"]
-nohook-timer = ["mbedtls-rs-sys/nohook-timer"]
-nohook-wall-clock = ["mbedtls-rs-sys/nohook-wall-clock"]
+
+# Time hooks: inclusion model (opt-in, new features)
+hook-timer = ["mbedtls-rs-sys/hook-timer"]
+hook-wall-clock = ["mbedtls-rs-sys/hook-wall-clock"]
 
 accel-esp32 = ["mbedtls-rs-sys/accel-esp32"]
 accel-esp32c2 = ["mbedtls-rs-sys/accel-esp32c2"]

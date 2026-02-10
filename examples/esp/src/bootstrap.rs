@@ -77,7 +77,7 @@ pub async fn bootstrap_stack<const SOCKETS: usize>(
 
     // TODO feature gate?
     {
-        let timer = mk_static!(EmbassyTimer, EmbassyTimer::default());
+        let timer = mk_static!(EmbassyTimer, EmbassyTimer);
         unsafe {
             mbedtls_rs::sys::hook::timer::hook_timer(Some(timer));
         }
