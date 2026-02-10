@@ -48,7 +48,6 @@ fn main() -> Result<()> {
         }
     }
 
-    // Use pregen if: crypto hooks match default AND no time hooks requested
     let hooks_changed = hooks != MbedtlsBuilder::DEFAULT_HOOKS;
 
     let dirs = if pregen_bindings && pregen_bindings_rs_file.exists() && !hooks_changed {
@@ -62,7 +61,7 @@ fn main() -> Result<()> {
             if !pregen_bindings {
                 println!("cargo::warning=Forcing on-the-fly build for target {target} as bindings are not available.");
             } else {
-                println!("cargo::warning=Forcing on-the-fly build for {target} because hooks don't match default.");
+                println!("cargo::warning=Forcing on-the-fly build for {target} because hooks don't match default. Enabled hooks: {hooks:?}.");
             }
         }
 
