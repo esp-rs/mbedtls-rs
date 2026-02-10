@@ -15,7 +15,6 @@ pub trait MbedtlsTimer {
 ///   any MbedTLS functions that use time-based operations (e.g., timeouts,
 ///   certificate validation), and ensure that the timer implementation is
 ///   valid for the duration of its use.
-#[cfg(feature = "hook-timer")]
 pub unsafe fn hook_timer(timer: Option<&'static (dyn MbedtlsTimer + Send + Sync)>) {
     critical_section::with(|cs| {
         #[allow(clippy::if_same_then_else)]
@@ -29,7 +28,6 @@ pub unsafe fn hook_timer(timer: Option<&'static (dyn MbedtlsTimer + Send + Sync)
     });
 }
 
-#[cfg(feature = "hook-timer")]
 mod alt {
     use core::cell::Cell;
     use critical_section::Mutex;

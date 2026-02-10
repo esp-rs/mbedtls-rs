@@ -10,7 +10,9 @@
 
 pub mod digest;
 pub mod exp_mod;
+#[cfg(feature = "hook-timer")]
 pub mod timer;
+#[cfg(feature = "hook-wall-clock")]
 pub mod wall_clock;
 
 /// The work area memory type used by MbedTLS algorithms' hooks
