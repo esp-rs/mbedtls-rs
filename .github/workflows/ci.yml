@@ -230,9 +230,6 @@ jobs:
       - name: Fmt Check - Examples
         run: cd examples/${{ matrix.mcu[0] }}; cargo fmt -- --check
 
-      - name: Initialize submodules for examples
-        run: git submodule update --init --recursive
-
       - name: Clippy - Examples
         run: export WIFI_SSID=ssid; export WIFI_PASS=pass; cd examples/${{ matrix.mcu[0] }}; cargo clippy --no-default-features --features ${{ matrix.mcu[1] }} --target ${{ matrix.mcu[2] }} -Zbuild-std=core,alloc,panic_abort -- -D warnings
 
