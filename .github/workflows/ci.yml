@@ -84,10 +84,21 @@ jobs:
         run: cd examples/std; cargo build
 
   build-mbedtls:
-    name: Build MbedTLS
+    name: Build MbedTLS (${{ matrix.binding-type.name }})
     runs-on: ubuntu-latest
     permissions: read-all
     needs: build
+    strategy:
+      matrix:
+        binding-type:
+          - name: "Library (DEFAULT_HOOKS)"
+            flags: ""
+            artifact-name: "mbedtls-rs-sys"
+            upload-for-commit: true
+          - name: "Examples (Timer + WallClock)"
+            flags: "--timer --wall-clock"
+            artifact-name: "mbedtls-rs-sys-examples"
+            upload-for-commit: false
     outputs:
       upload-libs: ${{ steps.detect-changes.outputs.libs == 'true' }}
 
@@ -138,7 +149,7 @@ jobs:
           echo "${LIBCLANG_PATH}/../bin:$PATH" >> "$GITHUB_PATH"
           echo "LIBCLANG_PATH=${LIBCLANG_PATH}" >> "$GITHUB_ENV"
           echo "CLANG_PATH=${CLANG_PATH}" >> "$GITHUB_ENV"
-  
+
 # TODO: Remove the manual espup installation and run once the action below
 # supports the `-r` flag to install the Espressif RISCV GCC toolchain
 # See https://github.com/esp-rs/xtensa-toolchain/issues/45 for more info
@@ -154,24 +165,25 @@ jobs:
 
       - name: Build MbedTLS libraries and bindings
         if: |
+          matrix.binding-type.upload-for-commit == false ||
           steps.detect-changes.outputs.libs == 'true' ||
           contains(github.event.pull_request.labels.*.name, 'rebuild-libs')
         run: |
           rm -rf mbedtls-rs-sys/libs/*
-          cargo +stable xtask gen --timer --wall-clock xtensa-esp32-none-elf
-          cargo +stable xtask gen --timer --wall-clock xtensa-esp32s2-none-elf
-          cargo +stable xtask gen --timer --wall-clock xtensa-esp32s3-none-elf
-          cargo +stable xtask gen --timer --wall-clock riscv32imc-unknown-none-elf
-          cargo +stable xtask gen --timer --wall-clock riscv32imac-unknown-none-elf
+          cargo +stable xtask gen ${{ matrix.binding-type.flags }} xtensa-esp32-none-elf
+          cargo +stable xtask gen ${{ matrix.binding-type.flags }} xtensa-esp32s2-none-elf
+          cargo +stable xtask gen ${{ matrix.binding-type.flags }} xtensa-esp32s3-none-elf
+          cargo +stable xtask gen ${{ matrix.binding-type.flags }} riscv32imc-unknown-none-elf
+          cargo +stable xtask gen ${{ matrix.binding-type.flags }} riscv32imac-unknown-none-elf
 
-      - name: Upload libraries artifacts for commit
+      - name: Upload artifacts
         if: |
-          (steps.detect-changes.outputs.libs == 'true' &&
-          github.ref == 'refs/heads/main') ||
+          matrix.binding-type.upload-for-commit == false ||
+          (steps.detect-changes.outputs.libs == 'true' && github.ref == 'refs/heads/main') ||
           contains(github.event.pull_request.labels.*.name, 'rebuild-libs')
         uses: actions/upload-artifact@v4
         with:
-          name: mbedtls-rs-sys
+          name: ${{ matrix.binding-type.artifact-name }}
           retention-days: 1
           path: |
             mbedtls-rs-sys/libs
@@ -213,6 +225,12 @@ jobs:
         with:
           default: true
           ldproxy: true
+
+      - name: Download example bindings (timer + wall-clock)
+        uses: actions/download-artifact@v4
+        with:
+          name: mbedtls-rs-sys-examples
+          path: mbedtls-rs-sys/
 
       # TODO: Double-check and uncomment
       # - uses: Swatinem/rust-cache@v2
@@ -272,6 +290,12 @@ jobs:
         with:
           default: true
           ldproxy: true
+
+      - name: Download example bindings (timer + wall-clock)
+        uses: actions/download-artifact@v4
+        with:
+          name: mbedtls-rs-sys-examples
+          path: mbedtls-rs-sys/
 
       # TODO: Double-check and uncomment
       # - uses: Swatinem/rust-cache@v2
