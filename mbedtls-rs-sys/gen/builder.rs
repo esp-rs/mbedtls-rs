@@ -6,6 +6,10 @@ use anyhow::{anyhow, Result};
 use bindgen::Builder;
 use cmake::Config;
 use enumset::{enum_set, EnumSet, EnumSetType};
+use serde::{Deserialize, Serialize};
+
+pub const DEFAULT_HOOKS: EnumSet<Hook> =
+    enum_set!(Hook::Sha1 | Hook::Sha256 | Hook::Sha512 | Hook::ExpMod);
 
 /// What hooks to install in MbedTLS
 #[derive(EnumSetType, Debug)]
@@ -24,6 +28,13 @@ pub enum Hook {
     WallClock,
 }
 
+/// Metadata about hooks used during bindings generation
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HooksMetadata {
+    /// EnumSet serializes nicely to TOML when serde feature is enabled
+    pub hooks: EnumSet<Hook>,
+}
+
 /// The MbedTLS builder
 pub struct MbedtlsBuilder {
     hooks: EnumSet<Hook>,
@@ -35,12 +46,10 @@ pub struct MbedtlsBuilder {
 }
 
 impl MbedtlsBuilder {
-    pub const DEFAULT_HOOKS: EnumSet<Hook> =
-        enum_set!(Hook::Sha1 | Hook::Sha256 | Hook::Sha512 | Hook::ExpMod);
     /// Create a new MbedtlsBuilder
     ///
     /// Arguments:
-    /// - `hooks` - Set of algorithm hooks to enable. If not specified, DEFAULT_HOOKS will be used.
+    /// - `hooks` - Set of algorithm hooks to enable.
     /// - `force_clang`: If true, force the use of Clang as the C/C++ compiler
     /// - `crate_root_path`: Path to the root of the crate
     /// - `cmake_rust_target`: Optional target for CMake when building MbedTLS, with Rust target-triple syntax. If not specified, the "TARGET" env variable will be used
@@ -54,7 +63,7 @@ impl MbedtlsBuilder {
     ///   (https://github.com/riscv-collab/riscv-gnu-toolchain)
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        hooks: Option<EnumSet<Hook>>,
+        hooks: EnumSet<Hook>,
         force_clang: bool,
         crate_root_path: PathBuf,
         cmake_rust_target: Option<String>,
@@ -65,7 +74,7 @@ impl MbedtlsBuilder {
         force_esp_riscv_gcc: bool,
     ) -> Self {
         Self {
-            hooks: hooks.unwrap_or(Self::DEFAULT_HOOKS),
+            hooks,
             cmake_configurer: CMakeConfigurer::new(
                 force_clang,
                 clang_sysroot_path.clone(),

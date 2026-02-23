@@ -1,12 +1,12 @@
-//! Custom implementations for MbedTLS hooks.
+//! This module allows for replacing (hooking) some crypto algorithms and timer/clock
+//! functionality in MbedTLS with custom implementations.
 //!
-//! Supports replacing:
-//! - Crypto algorithms (digest, exp_mod) with hardware-accelerated or custom implementations
-//! - Timer functions for timeout operations
-//! - Wall clock functions for certificate time validation
+//! This enables providing hardware-accelerated crypto or platform-specific time sources
+//! on platforms that support it.
 //!
-//! # Note
-//! Un-hooked crypto algorithms use RustCrypto implementations, not MbedTLS software fallbacks.
+//! NOTE: For crypto algorithms specifically, when hooking is enabled, those that remain
+//! "un-hooked" by the user will NOT use the software implementations provided by MbedTLS,
+//! but rather - RustCrypto based ones!
 
 pub mod digest;
 pub mod exp_mod;

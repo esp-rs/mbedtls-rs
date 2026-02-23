@@ -4,6 +4,17 @@ pub trait MbedtlsWallClock {
     ///
     /// Returns the current calendar time in UTC as a `tm` structure.
     ///
+    /// The `tm` struct contains the following fields:
+    /// - `tm_sec`: seconds after the minute - [0, 60]
+    /// - `tm_min`: minutes after the hour - [0, 59]
+    /// - `tm_hour`: hours since midnight - [0, 23]
+    /// - `tm_mday`: day of the month - [1, 31]
+    /// - `tm_mon`: months since January - [0, 11]
+    /// - `tm_year`: years since 1900
+    /// - `tm_wday`: days since Sunday - [0, 6]
+    /// - `tm_yday`: days since January 1 - [0, 365]
+    /// - `tm_isdst`: Daylight Saving Time flag
+    ///
     /// # Note
     /// This function should return the current wall clock time. The wall clock implementation is
     /// decoupled from the timer implementation (which provides monotonic timing for timeouts).

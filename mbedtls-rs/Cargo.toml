@@ -37,7 +37,9 @@ accel-esp32s2 = ["mbedtls-rs-sys/accel-esp32s2"]
 accel-esp32s3 = ["mbedtls-rs-sys/accel-esp32s3"]
 
 timer-embassy = ["mbedtls-rs-sys/timer-embassy"]
+timer-std = ["mbedtls-rs-sys/timer-std"]
 
+wall-clock-std = ["mbedtls-rs-sys/wall-clock-std"]
 wall-clock-esp32 = ["mbedtls-rs-sys/wall-clock-esp32"]
 wall-clock-esp32c2 = ["mbedtls-rs-sys/wall-clock-esp32c2"]
 wall-clock-esp32c3 = ["mbedtls-rs-sys/wall-clock-esp32c3"]

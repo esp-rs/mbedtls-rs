@@ -37,9 +37,12 @@ accel-esp32s3 = ["esp-hal/esp32s3", "crypto-bigint"]
 
 # Enable timer/wall-clock hooks for custom time implementations
 hook-timer = []
-hook-wall-clock = []
+hook-wall-clock = ["hook-timer"] # 'hook-wall-clock' feature requires 'hook-timer' to be enabled. MbedTLS X.509 certificate validation requires both time() and gmtime_r() functions.
 
 timer-embassy = ["embassy-time", "hook-timer"]
+timer-std = ["hook-timer"]
+
+wall-clock-std = ["time", "hook-wall-clock"]
 wall-clock-esp32 = ["esp-hal/esp32", "time", "hook-wall-clock"]
 wall-clock-esp32c2 = ["esp-hal/esp32c2", "time", "hook-wall-clock"]
 wall-clock-esp32c3 = ["esp-hal/esp32c3", "time", "hook-wall-clock"]
@@ -51,7 +54,7 @@ wall-clock-esp32s3 = ["esp-hal/esp32s3", "time", "hook-wall-clock"]
 [dependencies]
 defmt = { version = "1", optional = true }
 log = { version = "0.4", optional = true }
-enumset = { version = "1", default-features = false }
+enumset = { version = "1", default-features = false, features = ["serde"] }
 # For hooking
 digest = { version = "0.10", default-features = false }
 sha1 = { version = "0.10", default-features = false }
@@ -75,10 +78,12 @@ esp-idf-sys = { version = "0.36", default-features = false }
 [build-dependencies]
 anyhow = "1"
 bindgen = "0.72"
-enumset = "1"
+enumset = { version = "1", features = ["serde"] }
 env_logger = "0.11"
 log = "0.4"
 cmake = "0.1.52"
 cc = "1.1"
 fs_extra = "1.3"
 embuild = "0.33"
+toml = "0.8"
+serde = { version = "1.0", features = ["derive"] }

@@ -16,7 +16,7 @@ opt-level = "z"
 
 [dependencies]
 log = "0.4"
-mbedtls-rs = { path = "../../mbedtls-rs", features = ["log", "edge-nal"] }
+mbedtls-rs = { path = "../../mbedtls-rs", features = ["log", "edge-nal", "timer-std", "wall-clock-std"] }
 enumset = { version = "1", default-features = false }
 
 # For the `edge_*` examples

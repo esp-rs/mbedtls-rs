@@ -47,11 +47,18 @@ impl EspRtcWallClock {
 }
 
 impl MbedtlsWallClock for EspRtcWallClock {
+    /// Returns the current time from the RTC.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the RTC time is out of the valid range for `OffsetDateTime`.
+    /// This can occur if the RTC was not properly initialized with a valid timestamp
+    /// (e.g., via NTP or manual setting).
     fn instant(&self) -> tm {
         let rtc_time_secs = self.with_rtc(|rtc| (rtc.current_time_us() / 1_000_000) as i64);
 
         let datetime = time::OffsetDateTime::from_unix_timestamp(rtc_time_secs)
-            .unwrap_or(time::OffsetDateTime::UNIX_EPOCH);
+            .expect("RTC time out of range, ensure RTC is initialized with valid time");
 
         let date = datetime.date();
         let time = datetime.time();

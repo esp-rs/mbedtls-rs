@@ -1,5 +1,5 @@
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
@@ -11,6 +11,8 @@ use tempdir::TempDir;
 
 #[path = "../../mbedtls-rs-sys/gen/builder.rs"]
 mod builder;
+
+use builder::HooksMetadata;
 
 // Arguments
 #[derive(Parser, Debug)]
@@ -37,9 +39,32 @@ enum Commands {
         #[arg(short = 'e', long = "force-esp-riscv-gcc")]
         force_esp_riscv_gcc: bool,
 
+        /// Enable timer hook support
+        #[arg(long = "timer")]
+        timer: bool,
+
+        /// Enable wall clock hook support
+        #[arg(long = "wall-clock")]
+        wall_clock: bool,
+
         /// Target triple for which to generate bindings and `.a` libraries
         target: String,
     },
+}
+
+fn write_hooks_metadata(
+    target: &str,
+    hooks: enumset::EnumSet<builder::Hook>,
+    bindings_dir: &Path,
+) -> Result<()> {
+    let metadata = HooksMetadata { hooks };
+
+    let metadata_path = bindings_dir.join(format!("{target}.toml"));
+    let toml_string = toml::to_string_pretty(&metadata)?;
+
+    std::fs::write(&metadata_path, toml_string)?;
+
+    Ok(())
 }
 
 fn main() -> Result<()> {
@@ -60,6 +85,8 @@ fn main() -> Result<()> {
         target,
         use_gcc,
         force_esp_riscv_gcc,
+        timer,
+        wall_clock,
     }) = args.command
     {
         let use_gcc = use_gcc || force_esp_riscv_gcc;
@@ -67,8 +94,17 @@ fn main() -> Result<()> {
         // For clang, use our own cross-platform sysroot
         let sysroot = (!use_gcc).then(|| sys_crate_root_path.join("gen").join("sysroot"));
 
+        // Build hooks set based on CLI flags
+        let mut hooks = builder::DEFAULT_HOOKS;
+        if timer {
+            hooks |= builder::Hook::Timer;
+        }
+        if wall_clock {
+            hooks |= builder::Hook::WallClock;
+        }
+
         let builder = builder::MbedtlsBuilder::new(
-            None,
+            hooks,
             !use_gcc,
             sys_crate_root_path.clone(),
             Some(target.clone()),
@@ -97,6 +133,12 @@ fn main() -> Result<()> {
                     .join("include")
                     .join(format!("{target}.rs")),
             ),
+        )?;
+
+        write_hooks_metadata(
+            &target,
+            hooks,
+            &sys_crate_root_path.join("src").join("include"),
         )?;
     }
 

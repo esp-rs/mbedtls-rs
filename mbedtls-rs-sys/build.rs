@@ -2,10 +2,29 @@ use anyhow::Result;
 use std::option::Option::Some;
 use std::{env, path::PathBuf};
 
-use crate::builder::{Hook, MbedtlsBuilder};
+use crate::builder::{Hook, HooksMetadata, MbedtlsBuilder};
 
 #[path = "gen/builder.rs"]
 mod builder;
+
+fn read_hooks_metadata(
+    target: &str,
+    crate_root: &std::path::Path,
+) -> Option<enumset::EnumSet<Hook>> {
+    let metadata_path = crate_root
+        .join("src")
+        .join("include")
+        .join(format!("{target}.toml"));
+
+    if !metadata_path.exists() {
+        return None;
+    }
+
+    let content = std::fs::read_to_string(&metadata_path).ok()?;
+    let metadata: HooksMetadata = toml::from_str(&content).ok()?;
+
+    Some(metadata.hooks)
+}
 
 fn main() -> Result<()> {
     let crate_root_path = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
@@ -27,7 +46,7 @@ fn main() -> Result<()> {
     let pregen_libs_dir = crate_root_path.join("libs").join(&target);
 
     // Figure out what MbedTLS hook options to enable
-    let mut hooks = MbedtlsBuilder::DEFAULT_HOOKS;
+    let mut hooks = builder::DEFAULT_HOOKS;
     for (feature, hook) in [
         ("CARGO_FEATURE_NOHOOK_SHA1", Hook::Sha1),
         ("CARGO_FEATURE_NOHOOK_SHA256", Hook::Sha256),
@@ -48,7 +67,25 @@ fn main() -> Result<()> {
         }
     }
 
-    let hooks_changed = hooks != MbedtlsBuilder::DEFAULT_HOOKS;
+    let hooks_changed = if let Some(pregen_hooks) = read_hooks_metadata(&target, &crate_root_path) {
+        // Compare against actual hooks used for pre-generation
+        if hooks != pregen_hooks {
+            println!(
+                "cargo::warning=Hooks changed for {target}. Current: {hooks:?}, Pre-generated: {pregen_hooks:?}"
+            );
+            true
+        } else {
+            false
+        }
+    } else {
+        // No metadata found - assume DEFAULT_HOOKS for backward compatibility
+        if pregen_bindings_rs_file.exists() {
+            println!(
+                "cargo::warning=No hooks metadata found for {target}, comparing against DEFAULT_HOOKS"
+            );
+        }
+        hooks != builder::DEFAULT_HOOKS
+    };
 
     let dirs = if pregen_bindings && pregen_bindings_rs_file.exists() && !hooks_changed {
         // Use the pre-generated bindings
@@ -72,7 +109,7 @@ fn main() -> Result<()> {
         let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
 
         let builder = MbedtlsBuilder::new(
-            Some(hooks),
+            hooks,
             !use_gcc,
             crate_root_path.clone(),
             Some(target),

@@ -8,3 +8,6 @@
     feature = "wall-clock-esp32s3",
 ))]
 pub mod esp;
+
+#[cfg(feature = "wall-clock-std")]
+mod std;
