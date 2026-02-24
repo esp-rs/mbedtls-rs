@@ -41,7 +41,7 @@ mod alt {
     ///
     /// This function is called by MbedTLS for time-based operations.
     #[no_mangle]
-    pub unsafe extern "C" fn mbedtls_ms_time() -> i64 {
+    unsafe extern "C" fn mbedtls_ms_time() -> i64 {
         if let Some(timer) = critical_section::with(|cs| TIMER.borrow(cs).get()) {
             timer.now() as i64
         } else {
@@ -54,7 +54,7 @@ mod alt {
     /// This function is called by MbedTLS for time-based operations.
     /// If `timer` is not null, the time is also stored in `*timer`.
     #[no_mangle]
-    pub unsafe extern "C" fn time(timer: *mut i64) -> i64 {
+    unsafe extern "C" fn time(timer: *mut i64) -> i64 {
         let time = if let Some(timer) = critical_section::with(|cs| TIMER.borrow(cs).get()) {
             timer.now() / 1000
         } else {

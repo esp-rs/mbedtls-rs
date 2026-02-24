@@ -80,10 +80,7 @@ mod alt {
     /// - `tm_buf` is null
     /// - No wall clock implementation is hooked
     #[no_mangle]
-    pub unsafe extern "C" fn mbedtls_platform_gmtime_r(
-        _tt: *const i64,
-        tm_buf: *mut tm,
-    ) -> *mut tm {
+    unsafe extern "C" fn mbedtls_platform_gmtime_r(_tt: *const i64, tm_buf: *mut tm) -> *mut tm {
         if tm_buf.is_null() {
             return ptr::null_mut();
         }
