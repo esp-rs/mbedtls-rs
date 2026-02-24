@@ -1,7 +1,8 @@
-//! Example of a client connection to a server, using the async API.
+//! Example demonstrating certificate time validation using the async API.
 //!
-//! This example connects to `https://httpbin.org/ip` and then to `https://certauth.cryptomix.com/json/` (mTLS)
-//! and performs a simple HTTPS 1.0 GET request to each.
+//! This example connects to `https://httpbin.org/ip` twice to verify that:
+//! 1. Certificate validation succeeds with correct time
+//! 2. Certificate validation fails when time is manipulated (simulating an expired certificate)
 
 #![no_std]
 #![no_main]
