@@ -36,16 +36,16 @@ async fn main(spawner: Spawner) {
 
     let stack_resources = mk_static!(StackResources<3>, StackResources::new());
 
-    let (mut tls, stack, mut accel, ..) =
+    let (mut tls, stack, mut accel, _timer, rtc) =
         bootstrap::bootstrap_stack(spawner, stack_resources).await;
 
     tls.set_debug(1);
 
     let _accel_queue = accel.start();
 
-    for (index, (server_name_cstr, server_path, mtls)) in [
+    for (index, (server_name_cstr, server_path, expired_cert)) in [
         (c"httpbin.org", "/ip", false),
-        (c"certauth.cryptomix.com", "/json/", true),
+        (c"httpbin.org", "/ip", true),
     ]
     .into_iter()
     .enumerate()
@@ -53,9 +53,14 @@ async fn main(spawner: Spawner) {
         let server_name = server_name_cstr.to_str().unwrap();
 
         info!(
-            "\n\n\n\nREQUEST {}, MTLS: {} =============================",
-            index, mtls
+            "\n\n\n\nREQUEST {}, EXPIRED_CERT: {} =============================",
+            index, expired_cert
         );
+
+        if expired_cert {
+            // double current time to cause certificate validation to fail
+            rtc.set_current_time_us(rtc.current_time_us() * 2);
+        }
 
         info!("Resolving server {}", server_name);
 
@@ -84,15 +89,26 @@ async fn main(spawner: Spawner) {
 
         let mut buf = [0u8; 1024];
 
-        client::request(
+        match client::request(
             tls.reference(),
             socket,
             server_name_cstr,
             server_path,
-            mtls,
+            false,
             &mut buf,
         )
         .await
-        .unwrap();
+        {
+            Ok(()) => {
+                if expired_cert {
+                    panic!("request should have failed with failed certificate validation");
+                }
+            }
+            Err(e) => {
+                if !expired_cert {
+                    panic!("request should have succeeded: {}", e);
+                }
+            }
+        }
     }
 }
