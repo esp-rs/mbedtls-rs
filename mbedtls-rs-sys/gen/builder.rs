@@ -256,7 +256,7 @@ impl MbedtlsBuilder {
     /// Re-run the build script if the file or directory has changed.
     #[allow(unused)]
     pub fn track(file_or_dir: &Path) {
-        println!("cargo:rerun-if-changed={}", file_or_dir.display())
+        println!("cargo::rerun-if-changed={}", file_or_dir.display())
     }
 
     fn hook_def(&self, hook: Hook) -> &'static str {
