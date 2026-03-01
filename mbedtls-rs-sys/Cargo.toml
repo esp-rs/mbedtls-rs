@@ -56,7 +56,7 @@ esp-idf-sys = { version = "0.36", default-features = false }
 
 [build-dependencies]
 anyhow = "1"
-bindgen = "0.71"
+bindgen = "0.72"
 enumset = "1"
 env_logger = "0.11"
 log = "0.4"
