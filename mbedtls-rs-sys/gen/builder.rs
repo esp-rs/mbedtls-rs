@@ -6,8 +6,8 @@ use anyhow::{anyhow, Result};
 use bindgen::Builder;
 use cmake::Config;
 use enumset::{enum_set, EnumSet, EnumSetType};
-use serde::{Deserialize, Serialize};
 
+// This set MUST contain all opt-out hooks
 pub const DEFAULT_HOOKS: EnumSet<Hook> =
     enum_set!(Hook::Sha1 | Hook::Sha256 | Hook::Sha512 | Hook::ExpMod);
 
@@ -26,13 +26,6 @@ pub enum Hook {
     Timer,
     /// Wall clock support
     WallClock,
-}
-
-/// Metadata about hooks used during bindings generation
-#[derive(Debug, Serialize, Deserialize)]
-pub struct HooksMetadata {
-    /// EnumSet serializes nicely to TOML when serde feature is enabled
-    pub hooks: EnumSet<Hook>,
 }
 
 /// The MbedTLS builder

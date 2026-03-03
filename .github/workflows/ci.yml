@@ -84,21 +84,10 @@ jobs:
         run: cd examples/std; cargo build
 
   build-mbedtls:
-    name: Build MbedTLS (${{ matrix.binding-type.name }})
+    name: Build MbedTLS
     runs-on: ubuntu-latest
     permissions: read-all
     needs: build
-    strategy:
-      matrix:
-        binding-type:
-          - name: "Library (DEFAULT_HOOKS)"
-            flags: ""
-            artifact-name: "mbedtls-rs-sys"
-            upload-for-commit: true
-          - name: "Examples (Timer + WallClock)"
-            flags: "--timer --wall-clock"
-            artifact-name: "mbedtls-rs-sys-examples"
-            upload-for-commit: false
     outputs:
       upload-libs: ${{ steps.detect-changes.outputs.libs == 'true' }}
 
@@ -165,26 +154,23 @@ jobs:
 
       - name: Build MbedTLS libraries and bindings
         if: |
-          matrix.binding-type.upload-for-commit == false ||
           steps.detect-changes.outputs.libs == 'true' ||
           contains(github.event.pull_request.labels.*.name, 'rebuild-libs')
         run: |
           rm -rf mbedtls-rs-sys/libs/*
-          cargo +stable xtask gen ${{ matrix.binding-type.flags }} xtensa-esp32-none-elf
-          cargo +stable xtask gen ${{ matrix.binding-type.flags }} xtensa-esp32s2-none-elf
-          cargo +stable xtask gen ${{ matrix.binding-type.flags }} xtensa-esp32s3-none-elf
-          cargo +stable xtask gen ${{ matrix.binding-type.flags }} riscv32imc-unknown-none-elf
-          cargo +stable xtask gen ${{ matrix.binding-type.flags }} riscv32imac-unknown-none-elf
+          cargo +stable xtask gen xtensa-esp32-none-elf
+          cargo +stable xtask gen xtensa-esp32s2-none-elf
+          cargo +stable xtask gen xtensa-esp32s3-none-elf
+          cargo +stable xtask gen riscv32imc-unknown-none-elf
+          cargo +stable xtask gen riscv32imac-unknown-none-elf
 
       - name: Upload artifacts
         if: |
-          matrix.binding-type.upload-for-commit == false ||
           (steps.detect-changes.outputs.libs == 'true' && github.ref == 'refs/heads/main') ||
           contains(github.event.pull_request.labels.*.name, 'rebuild-libs')
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.binding-type.artifact-name }}
-          retention-days: 1
+          name: mbedtls-rs-sys
           path: |
             mbedtls-rs-sys/libs
             mbedtls-rs-sys/src/include
@@ -242,11 +228,29 @@ jobs:
       - name: Fmt Check - Examples
         run: cd examples/${{ matrix.mcu[0] }}; cargo fmt -- --check
 
-      - name: Download example bindings (timer + wall-clock)
-        uses: actions/download-artifact@v4
-        with:
-          name: mbedtls-rs-sys-examples
-          path: mbedtls-rs-sys/
+      - name: mbedtls init
+        run: git submodule update --init --recursive
+
+      - name: Detect host target triple
+        run: |
+          export HOST_TARGET=$(rustup show | grep "Default host" | sed -e 's/.* //')
+          echo "HOST_TARGET=$HOST_TARGET" >> $GITHUB_ENV
+
+      - name: Install espup
+        run: |
+          curl -LO https://github.com/esp-rs/espup/releases/latest/download/espup-${{ env.HOST_TARGET }}.zip
+          unzip -o espup-${{ env.HOST_TARGET }}.zip -d "$HOME/.cargo/bin"
+          chmod +x "$HOME/.cargo/bin/espup"*
+          echo "ESPUP_EXPORT_FILE=$HOME/exports" >> $GITHUB_ENV
+
+      - name: Install espup toolchains (xtensa and riscv)
+        run: |
+          source "$HOME/.cargo/env"
+          "$HOME/.cargo/bin/espup" install -e -r
+          source "$HOME/exports"
+          echo "${LIBCLANG_PATH}/../bin:$PATH" >> "$GITHUB_PATH"
+          echo "LIBCLANG_PATH=${LIBCLANG_PATH}" >> "$GITHUB_ENV"
+          echo "CLANG_PATH=${CLANG_PATH}" >> "$GITHUB_ENV"
 
       - name: Clippy - Examples
         run: export WIFI_SSID=ssid; export WIFI_PASS=pass; cd examples/${{ matrix.mcu[0] }}; cargo clippy --no-default-features --features ${{ matrix.mcu[1] }} --target ${{ matrix.mcu[2] }} -Zbuild-std=core,alloc,panic_abort -- -D warnings

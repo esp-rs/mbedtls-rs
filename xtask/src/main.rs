@@ -1,5 +1,4 @@
-use std::env;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::Result;
 
@@ -11,8 +10,6 @@ use tempdir::TempDir;
 
 #[path = "../../mbedtls-rs-sys/gen/builder.rs"]
 mod builder;
-
-use builder::HooksMetadata;
 
 // Arguments
 #[derive(Parser, Debug)]
@@ -50,21 +47,6 @@ enum Commands {
         /// Target triple for which to generate bindings and `.a` libraries
         target: String,
     },
-}
-
-fn write_hooks_metadata(
-    target: &str,
-    hooks: enumset::EnumSet<builder::Hook>,
-    bindings_dir: &Path,
-) -> Result<()> {
-    let metadata = HooksMetadata { hooks };
-
-    let metadata_path = bindings_dir.join(format!("{target}.toml"));
-    let toml_string = toml::to_string_pretty(&metadata)?;
-
-    std::fs::write(&metadata_path, toml_string)?;
-
-    Ok(())
 }
 
 fn main() -> Result<()> {
@@ -135,11 +117,6 @@ fn main() -> Result<()> {
             ),
         )?;
 
-        write_hooks_metadata(
-            &target,
-            hooks,
-            &sys_crate_root_path.join("src").join("include"),
-        )?;
     }
 
     Ok(())
