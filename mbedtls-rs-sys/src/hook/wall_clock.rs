@@ -1,4 +1,4 @@
-use crate::bindings::tm;
+use crate::tm;
 pub trait MbedtlsWallClock {
     /// Get current wall clock time as broken-down time structure.
     ///
@@ -47,7 +47,7 @@ pub unsafe fn hook_wall_clock(wc: Option<&'static (dyn MbedtlsWallClock + Send +
 }
 
 mod alt {
-    use crate::bindings::tm;
+    use crate::{mbedtls_time_t, tm};
     use core::cell::Cell;
     use core::ptr;
     use critical_section::Mutex;
@@ -80,7 +80,10 @@ mod alt {
     /// - `tm_buf` is null
     /// - No wall clock implementation is hooked
     #[no_mangle]
-    unsafe extern "C" fn mbedtls_platform_gmtime_r(_tt: *const i64, tm_buf: *mut tm) -> *mut tm {
+    unsafe extern "C" fn mbedtls_platform_gmtime_r(
+        _tt: *const mbedtls_time_t,
+        tm_buf: *mut tm,
+    ) -> *mut tm {
         if tm_buf.is_null() {
             return ptr::null_mut();
         }

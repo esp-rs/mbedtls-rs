@@ -164,13 +164,15 @@ jobs:
           cargo +stable xtask gen riscv32imc-unknown-none-elf
           cargo +stable xtask gen riscv32imac-unknown-none-elf
 
-      - name: Upload artifacts
+      - name: Upload libraries artifacts for commit
         if: |
-          (steps.detect-changes.outputs.libs == 'true' && github.ref == 'refs/heads/main') ||
+          (steps.detect-changes.outputs.libs == 'true' &&
+          github.ref == 'refs/heads/main') ||
           contains(github.event.pull_request.labels.*.name, 'rebuild-libs')
         uses: actions/upload-artifact@v4
         with:
           name: mbedtls-rs-sys
+          retention-days: 1
           path: |
             mbedtls-rs-sys/libs
             mbedtls-rs-sys/src/include

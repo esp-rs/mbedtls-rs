@@ -4,6 +4,7 @@ use std::sync::OnceLock;
 use std::time::Instant;
 
 use crate::hook::timer::MbedtlsTimer;
+use crate::mbedtls_ms_time_t;
 
 static EPOCH: OnceLock<Instant> = OnceLock::new();
 
@@ -16,8 +17,9 @@ static EPOCH: OnceLock<Instant> = OnceLock::new();
 pub struct StdTimer;
 
 impl MbedtlsTimer for StdTimer {
-    fn now(&self) -> u64 {
+    fn now(&self) -> mbedtls_ms_time_t {
         let epoch = EPOCH.get_or_init(|| Instant::now());
-        Instant::now().duration_since(*epoch).as_millis() as u64
+        let ms = Instant::now().duration_since(*epoch).as_millis();
+        mbedtls_ms_time_t::try_from(ms).unwrap_or(mbedtls_ms_time_t::MAX)
     }
 }

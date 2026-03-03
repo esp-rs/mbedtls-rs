@@ -27,7 +27,7 @@ impl MbedtlsWallClock for StdWallClock {
         let duration = now
             .duration_since(SystemTime::UNIX_EPOCH)
             .expect("System time is before Unix epoch");
-        let timestamp = duration.as_secs() as i64;
+        let timestamp = i64::try_from(duration.as_secs()).unwrap_or(i64::MAX);
 
         let datetime = time::OffsetDateTime::from_unix_timestamp(timestamp)
             .expect("System time out of range for OffsetDateTime");

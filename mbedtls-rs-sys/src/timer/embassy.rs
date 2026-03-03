@@ -1,4 +1,5 @@
 use crate::hook::timer::MbedtlsTimer;
+use crate::mbedtls_ms_time_t;
 
 /// Embassy-based timer backend for MbedTLS timeout operations.
 ///
@@ -23,7 +24,8 @@ use crate::hook::timer::MbedtlsTimer;
 pub struct EmbassyTimer;
 
 impl MbedtlsTimer for EmbassyTimer {
-    fn now(&self) -> u64 {
-        embassy_time::Instant::now().as_millis()
+    fn now(&self) -> mbedtls_ms_time_t {
+        let ms = embassy_time::Instant::now().as_millis();
+        mbedtls_ms_time_t::try_from(ms).unwrap_or(mbedtls_ms_time_t::MAX)
     }
 }

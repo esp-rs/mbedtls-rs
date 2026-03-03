@@ -283,11 +283,7 @@ impl MbedtlsBuilder {
             Hook::Sha256 => &["MBEDTLS_SHA256_ALT"],
             Hook::Sha512 => &["MBEDTLS_SHA512_ALT"],
             Hook::ExpMod => &["MBEDTLS_MPI_EXP_MOD_ALT_FALLBACK"],
-            Hook::Timer => &[
-                "MBEDTLS_HAVE_TIME",
-                "MBEDTLS_PLATFORM_TIME_ALT",
-                "MBEDTLS_PLATFORM_MS_TIME_ALT",
-            ],
+            Hook::Timer => &["MBEDTLS_HAVE_TIME", "MBEDTLS_PLATFORM_MS_TIME_ALT"],
             Hook::WallClock => &["MBEDTLS_HAVE_TIME_DATE", "MBEDTLS_PLATFORM_GMTIME_R_ALT"],
         }
     }
