@@ -176,6 +176,14 @@ impl MbedtlsBuilder {
             }
         }
 
+        if self.hooks.contains(Hook::Timer) {
+            builder = builder.allowlist_item("time_t");
+        }
+
+        if self.hooks.contains(Hook::WallClock) {
+            builder = builder.allowlist_item("tm");
+        }
+
         let bindings = builder
             .generate()
             .map_err(|_| anyhow!("Failed to generate bindings"))?;
