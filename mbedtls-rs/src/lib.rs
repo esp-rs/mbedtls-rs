@@ -16,7 +16,10 @@ use crate::sys::{
     mbedtls_ctr_drbg_context, mbedtls_ctr_drbg_free, mbedtls_ctr_drbg_init, mbedtls_pk_context,
     mbedtls_pk_free, mbedtls_pk_init, mbedtls_ssl_conf_dbg, mbedtls_ssl_config,
     mbedtls_ssl_config_free, mbedtls_ssl_config_init, mbedtls_ssl_context, mbedtls_ssl_free,
-    mbedtls_ssl_init, mbedtls_x509_crt, mbedtls_x509_crt_free, mbedtls_x509_crt_init,
+    mbedtls_ssl_init, mbedtls_ssl_protocol_version,
+    mbedtls_ssl_protocol_version_MBEDTLS_SSL_VERSION_TLS1_2,
+    mbedtls_ssl_protocol_version_MBEDTLS_SSL_VERSION_TLS1_3, mbedtls_x509_crt,
+    mbedtls_x509_crt_free, mbedtls_x509_crt_init,
 };
 
 use rand_core::CryptoRng;
@@ -167,10 +170,10 @@ pub enum TlsVersion {
 }
 
 impl TlsVersion {
-    fn mbed_tls_version(&self) -> u32 {
+    fn mbed_tls_version(&self) -> mbedtls_ssl_protocol_version {
         match self {
-            TlsVersion::Tls1_2 => 0x303,
-            TlsVersion::Tls1_3 => 0x304,
+            TlsVersion::Tls1_2 => mbedtls_ssl_protocol_version_MBEDTLS_SSL_VERSION_TLS1_2,
+            TlsVersion::Tls1_3 => mbedtls_ssl_protocol_version_MBEDTLS_SSL_VERSION_TLS1_3,
         }
     }
 }
