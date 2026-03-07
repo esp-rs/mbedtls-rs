@@ -1,7 +1,3 @@
-#define MBEDTLS_CONFIG_FILE "config.h"
-
-#include MBEDTLS_CONFIG_FILE
-
 #include "mbedtls/platform.h"
 
 #include "mbedtls/aes.h"

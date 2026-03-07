@@ -46,6 +46,16 @@
 //! These functions are provided by `mbedtls-rs`. If you're building C code
 //! that depends on MbedTLS, make sure to link against `mbedtls-rs` to get
 //! these implementations.
+//!
+//! # Usage by other FFI crates
+//!
+//! FFI crates that link C libraries which in turn depend on MbedTLS can use
+//! this crate for their build process.
+//! This crate exposes the `include` metadata key, which contains a list of
+//! include directories relevant to MbedTLS. Use [`std::env::split_paths`] when
+//! parsing this metadata key, and pass the resulting paths to the C compiler.
+//!
+//! [`std::env::split_paths`]: https://doc.rust-lang.org/std/env/fn.split_paths.html
 
 #![no_std]
 #![allow(clippy::uninlined_format_args)]

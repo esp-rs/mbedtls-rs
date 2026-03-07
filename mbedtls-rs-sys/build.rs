@@ -74,10 +74,21 @@ fn main() -> Result<()> {
             force_esp_riscv_gcc,
         );
 
-        let libs_dir = builder.compile(&out, None)?;
-        let bindings = builder.generate_bindings(&out, None)?;
+        let artifacts = builder.compile(&out, None)?;
+        let bindings = builder.generate_bindings(&out, &artifacts.include_dirs, None)?;
 
-        Some((bindings, libs_dir))
+        // TODO: Right now we only set this metadata for on-the-fly builds.
+        //       We also need to set it when using pre-generated
+        //       bindings, but that requires some refactoring.
+
+        println!(
+            "cargo::metadata=include={}",
+            env::join_paths(artifacts.include_dirs.iter())
+                .expect("paths should be valid")
+                .to_string_lossy() // Switch to .display() when MSRV is above 1.87.0.
+        );
+
+        Some((bindings, artifacts.libraries))
     };
 
     if let Some((bindings, libs_dir)) = dirs {
