@@ -25,6 +25,7 @@ nohook-sha1 = []
 nohook-sha256 = []
 nohook-sha512 = []
 nohook-exp-mod = []
+
 # Enable HW acceleration drivers for the ESP series of MCUs via `esp-hal`
 accel-esp32 = ["esp-hal/esp32", "crypto-bigint"]
 accel-esp32c2 = ["esp-hal/esp32c2"]
@@ -33,6 +34,22 @@ accel-esp32c6 = ["esp-hal/esp32c6", "crypto-bigint"]
 accel-esp32h2 = ["esp-hal/esp32h2", "crypto-bigint"]
 accel-esp32s2 = ["esp-hal/esp32s2", "crypto-bigint"]
 accel-esp32s3 = ["esp-hal/esp32s3", "crypto-bigint"]
+
+# Enable timer/wall-clock hooks for custom time implementations
+hook-timer = []
+hook-wall-clock = ["hook-timer"] # 'hook-wall-clock' feature requires 'hook-timer' to be enabled. MbedTLS X.509 certificate validation requires both time() and gmtime_r() functions.
+
+timer-embassy = ["embassy-time", "hook-timer"]
+timer-std = ["hook-timer"]
+
+wall-clock-std = ["time", "hook-wall-clock"]
+wall-clock-esp32 = ["esp-hal/esp32", "time", "hook-wall-clock"]
+wall-clock-esp32c2 = ["esp-hal/esp32c2", "time", "hook-wall-clock"]
+wall-clock-esp32c3 = ["esp-hal/esp32c3", "time", "hook-wall-clock"]
+wall-clock-esp32c6 = ["esp-hal/esp32c6", "time", "hook-wall-clock"]
+wall-clock-esp32h2 = ["esp-hal/esp32h2", "time", "hook-wall-clock"]
+wall-clock-esp32s2 = ["esp-hal/esp32s2", "time", "hook-wall-clock"]
+wall-clock-esp32s3 = ["esp-hal/esp32s3", "time", "hook-wall-clock"]
 
 [dependencies]
 defmt = { version = "1", optional = true }
@@ -43,11 +60,15 @@ digest = { version = "0.10", default-features = false }
 sha1 = { version = "0.10", default-features = false }
 # For some reason, `soft` results in enormous slowdowns on xtensa and riscv32
 sha2 = { version = "0.10", default-features = false, features = ["force-soft-compact"] }
+time = { version = "0.3", default-features = false, optional = true }
 critical-section = "1"
 
 # For esp-hal accel
 esp-hal = { version = "1", features = ["unstable"], optional = true }
 crypto-bigint = { version = "0.5.3", default-features = false, features = ["extra-sizes"], optional = true }
+
+# For embassy timer support
+embassy-time = {version = "0.5.0", optional = true}
 
 # ESP-IDF: The mbedtls lib distributed with ESP-IDF is used
 # All other platforms: mbedtls libs and bindings are created on the fly
