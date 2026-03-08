@@ -1,4 +1,12 @@
-//! Raw bindings to the MbedTLS library
+//! Raw bindings to the MbedTLS library.
+//!
+//! # Usage by other FFI crates
+//!
+//! FFI crates that link C libraries which in turn depend on MbedTLS can use
+//! this crate for their build process.
+//! This crate exposes the `include` metadata key, which contains a list of
+//! include directories relevant to MbedTLS. Use [`std::env::split_paths`] when
+//! parsing this metadata key, and pass the resulting paths to the C compiler.
 
 #![no_std]
 #![allow(clippy::uninlined_format_args)]

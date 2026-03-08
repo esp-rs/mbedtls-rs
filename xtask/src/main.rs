@@ -84,7 +84,7 @@ fn main() -> Result<()> {
 
         let out = TempDir::new("mbedtls-sys-libs")?;
 
-        builder.compile(
+        let artifacts = builder.compile(
             out.path(),
             Some(&sys_crate_root_path.join("libs").join(&target)),
         )?;
@@ -93,6 +93,7 @@ fn main() -> Result<()> {
 
         builder.generate_bindings(
             out.path(),
+            &artifacts.include_dirs,
             Some(
                 &sys_crate_root_path
                     .join("src")
