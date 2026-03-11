@@ -1,10 +1,15 @@
+use std::option::Option;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{anyhow, Result};
 use bindgen::Builder;
 use cmake::Config;
-use enumset::{EnumSet, EnumSetType};
+use enumset::{enum_set, EnumSet, EnumSetType};
+
+// This set MUST contain all opt-out hooks
+pub const DEFAULT_HOOKS: EnumSet<Hook> =
+    enum_set!(Hook::Sha1 | Hook::Sha256 | Hook::Sha512 | Hook::ExpMod);
 
 /// What hooks to install in MbedTLS
 #[derive(EnumSetType, Debug)]
@@ -17,6 +22,10 @@ pub enum Hook {
     Sha512,
     /// MPI modular exponentiation
     ExpMod,
+    /// Timer support
+    Timer,
+    /// Wall clock support
+    WallClock,
 }
 
 /// The MbedTLS builder
@@ -33,7 +42,7 @@ impl MbedtlsBuilder {
     /// Create a new MbedtlsBuilder
     ///
     /// Arguments:
-    /// - `hooks` - Set of algorithm hooks to enable
+    /// - `hooks` - Set of algorithm hooks to enable.
     /// - `force_clang`: If true, force the use of Clang as the C/C++ compiler
     /// - `crate_root_path`: Path to the root of the crate
     /// - `cmake_rust_target`: Optional target for CMake when building MbedTLS, with Rust target-triple syntax. If not specified, the "TARGET" env variable will be used
@@ -156,13 +165,23 @@ impl MbedtlsBuilder {
         }
 
         for hook in self.hooks {
-            let def = self.hook_def(hook);
+            let defs = self.hook_defs(hook);
 
-            builder = builder.clang_arg(format!("-D{def}"));
+            for def in defs {
+                builder = builder.clang_arg(format!("-D{def}"));
 
-            if let Some(size_def) = self.hook_work_area_size_def(hook) {
-                builder = builder.clang_arg(format!("-D{def}_WORK_AREA_SIZE={size_def}"));
+                if let Some(size_def) = self.hook_work_area_size_def(hook) {
+                    builder = builder.clang_arg(format!("-D{def}_WORK_AREA_SIZE={size_def}"));
+                }
             }
+        }
+
+        if self.hooks.contains(Hook::Timer) {
+            builder = builder.allowlist_item("time_t");
+        }
+
+        if self.hooks.contains(Hook::WallClock) {
+            builder = builder.allowlist_item("tm");
         }
 
         let bindings = builder
@@ -234,15 +253,23 @@ impl MbedtlsBuilder {
             .out_dir(&target_dir);
 
         for hook in self.hooks {
-            let def = self.hook_def(hook);
+            let defs = self.hook_defs(hook);
 
-            config.cflag(format!("-D{def}")).cxxflag(format!("-D{def}"));
+            for def in defs {
+                config.cflag(format!("-D{def}")).cxxflag(format!("-D{def}"));
 
-            if let Some(size_def) = self.hook_work_area_size_def(hook) {
-                config
-                    .cflag(format!("-D{def}_WORK_AREA_SIZE={size_def}"))
-                    .cxxflag(format!("-D{def}_WORK_AREA_SIZE={size_def}"));
+                if let Some(size_def) = self.hook_work_area_size_def(hook) {
+                    config
+                        .cflag(format!("-D{def}_WORK_AREA_SIZE={size_def}"))
+                        .cxxflag(format!("-D{def}_WORK_AREA_SIZE={size_def}"));
+                }
             }
+        }
+
+        if self.hooks.contains(Hook::Timer) {
+            // Unlike crypto alts, platform_time.h has no
+            // _alt.h inclusion mechanism, so we force-include it via -include.
+            config.cflag("-include time_alt.h");
         }
 
         config.build();
@@ -256,12 +283,21 @@ impl MbedtlsBuilder {
         println!("cargo::rerun-if-changed={}", file_or_dir.display())
     }
 
-    fn hook_def(&self, hook: Hook) -> &'static str {
+    fn hook_defs(&self, hook: Hook) -> &'static [&'static str] {
         match hook {
-            Hook::Sha1 => "MBEDTLS_SHA1_ALT",
-            Hook::Sha256 => "MBEDTLS_SHA256_ALT",
-            Hook::Sha512 => "MBEDTLS_SHA512_ALT",
-            Hook::ExpMod => "MBEDTLS_MPI_EXP_MOD_ALT_FALLBACK",
+            Hook::Sha1 => &["MBEDTLS_SHA1_ALT"],
+            Hook::Sha256 => &["MBEDTLS_SHA256_ALT"],
+            Hook::Sha512 => &["MBEDTLS_SHA512_ALT"],
+            Hook::ExpMod => &["MBEDTLS_MPI_EXP_MOD_ALT_FALLBACK"],
+            Hook::Timer => &[
+                "MBEDTLS_HAVE_TIME",
+                // using a mbedtls prefix to ensure we don't have conflicting 'time' symbols on std
+                "MBEDTLS_PLATFORM_STD_TIME=mbedtls_sec_time",
+                // required to set MBEDTLS_PLATFORM_STD_TIME
+                "MBEDTLS_PLATFORM_TIME_ALT",
+                "MBEDTLS_PLATFORM_MS_TIME_ALT",
+            ],
+            Hook::WallClock => &["MBEDTLS_HAVE_TIME_DATE", "MBEDTLS_PLATFORM_GMTIME_R_ALT"],
         }
     }
 
