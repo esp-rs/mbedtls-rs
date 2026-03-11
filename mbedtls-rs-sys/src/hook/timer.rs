@@ -55,7 +55,7 @@ mod alt {
     ///
     /// The time does not need to be correct, only time differences are used by MbedTls
     #[no_mangle]
-    unsafe extern "C" fn time(timer: *mut mbedtls_time_t) -> mbedtls_time_t {
+    unsafe extern "C" fn mbedtls_sec_time(timer: *mut mbedtls_time_t) -> mbedtls_time_t {
         let time = if let Some(t) = critical_section::with(|cs| TIMER.borrow(cs).get()) {
             t.now() / 1000
         } else {
