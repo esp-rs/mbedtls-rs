@@ -52,7 +52,7 @@ crypto-bigint = { version = "0.5.3", default-features = false, features = ["extr
 # ESP-IDF: The mbedtls lib distributed with ESP-IDF is used
 # All other platforms: mbedtls libs and bindings are created on the fly
 [target.'cfg(target_os = "espidf")'.dependencies]
-esp-idf-sys = { version = "0.36", default-features = false }
+esp-idf-sys = { version = "0.37", default-features = false }
 
 [build-dependencies]
 anyhow = "1"
