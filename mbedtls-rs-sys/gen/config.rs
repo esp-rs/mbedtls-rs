@@ -10,14 +10,23 @@ use std::{fmt, fs, io};
 #[derive(Debug)]
 pub struct MbedtlsUserConfig {
     options: BTreeMap<Box<str>, Value>,
+    includes: Vec<Box<str>>,
 }
 
 impl MbedtlsUserConfig {
     /// Creates a new, empty config.
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             options: BTreeMap::new(),
+            includes: Vec::new(),
         }
+    }
+
+    /// Appends a `#include` directive
+    ///
+    pub fn add_include(&mut self, header: &str) -> &mut Self {
+        self.includes.push(header.into());
+        self
     }
 
     /// Writes the MbedTLS user config to a header file.
@@ -66,6 +75,9 @@ impl fmt::Display for MbedtlsUserConfig {
                 write!(f, " {value}")?;
             }
             f.write_str("\n")?;
+        }
+        for header in &self.includes {
+            writeln!(f, "#include \"{header}\"")?;
         }
         Ok(())
     }

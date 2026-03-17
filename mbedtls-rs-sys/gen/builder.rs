@@ -2,7 +2,7 @@ use std::option::Option;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use self::config::MbedtlsUserConfig;
+use self::config::{MbedtlsUserConfig, Value};
 use anyhow::{anyhow, Result};
 use bindgen::Builder;
 use cmake::Config;
@@ -38,6 +38,8 @@ impl Hook {
             Self::Sha256 => Some(208),
             Self::Sha512 => Some(304),
             Self::ExpMod => None,
+            Self::Timer => None,
+            Self::WallClock => None,
         }
     }
 
@@ -48,11 +50,50 @@ impl Hook {
             Self::Sha256 => "SHA256_ALT",
             Self::Sha512 => "SHA512_ALT",
             Self::ExpMod => "MPI_EXP_MOD_ALT_FALLBACK",
+            Self::Timer => "HAVE_TIME",
+            Self::WallClock => "HAVE_TIME_DATE",
+        }
+    }
+
+    /// Returns extra config options and values required for the hook the function properly.
+    fn extra_options(self) -> Option<Vec<(&'static str, Value)>> {
+        match self {
+            Self::Sha1 | Self::Sha256 | Self::Sha512 | Self::ExpMod => None,
+            Self::Timer => Some(vec![
+                // using a mbedtls prefix to ensure we don't have conflicting 'time' symbols on std
+                ("PLATFORM_STD_TIME", Value::from("mbedtls_sec_time")),
+                // required to set MBEDTLS_PLATFORM_STD_TIME
+                ("PLATFORM_TIME_ALT", Value::from(true)),
+                ("PLATFORM_MS_TIME_ALT", Value::from(true)),
+            ]),
+            Self::WallClock => Some(vec![("PLATFORM_GMTIME_R_ALT", Value::from(true))]),
+        }
+    }
+
+    /// Returns extra header files to include in the user config for this hook.
+    const fn includes(self) -> Option<&'static [&'static str]> {
+        match self {
+            // Unlike crypto alts, platform_time.h has no _alt.h inclusion mechanism
+            Hook::Timer => Some(&["time_alt.h"]),
+            _ => None,
         }
     }
 
     fn apply_to_config(self, config: &mut MbedtlsUserConfig) {
         config.set(self.config_ident(), true);
+
+        if let Some(extra_idents) = self.extra_options() {
+            for entries in extra_idents {
+                config.set(entries.0, entries.1);
+            }
+        }
+
+        if let Some(includes) = self.includes() {
+            for include in includes {
+                config.add_include(include);
+            }
+        }
+
         if let Some(work_area_size) = self.work_area_size() {
             // This is not relevant for MbedTLS itself, but our
             // implementation needs to know the work area size.
@@ -195,6 +236,14 @@ impl MbedtlsBuilder {
 
         if self.short_enums() {
             builder = builder.clang_arg("-fshort-enums");
+        }
+
+        if self.hooks.contains(Hook::Timer) {
+            builder = builder.allowlist_item("time_t");
+        }
+
+        if self.hooks.contains(Hook::WallClock) {
+            builder = builder.allowlist_item("tm");
         }
 
         if let Some(sysroot_path) = self
