@@ -17,6 +17,4 @@ struct tm {
     int tm_isdst;  // Daylight Saving Time flag
 };
 
-time_t time(time_t* timer);
-
 #endif
