@@ -1,2 +1,2 @@
-#[cfg(feature = "hook-wall-clock")]
+#[cfg(feature = "hook-timer")]
 pub mod timer;
