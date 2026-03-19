@@ -10,7 +10,8 @@ use crate::hook::wall_clock::MbedtlsWallClock;
 ///
 /// # Usage
 /// ```no_run
-/// use esp_mbedtls_sys::clock::{hook_wall_clock, esp::EspRtcWallClock};
+/// use esp_mbedtls_sys::hook::backend::esp::wall_clock::EspRtcWallClock;
+/// use esp_mbedtls_sys::hook::wall_clock::hook_wall_clock;
 ///
 /// // The wall clock must be static (using static_cell or similar)
 /// let rtc = esp_hal::rtc_cntl::Rtc = /* ... */;
