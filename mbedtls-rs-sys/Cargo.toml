@@ -31,7 +31,7 @@ hook-timer = []
 hook-wall-clock = ["hook-timer"] # 'hook-wall-clock' feature requires 'hook-timer' to be enabled. MbedTLS X.509 certificate validation requires both time() and gmtime_r() functions.
 
 # STD hook impls
-std = []
+std = ["time"]
 
 # esp-hal hook impls
 esp32 = ["esp-hal/esp32", "crypto-bigint", "time"]
