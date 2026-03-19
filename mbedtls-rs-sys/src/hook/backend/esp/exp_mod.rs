@@ -2,14 +2,10 @@
 
 use core::ffi::c_int;
 
-#[cfg(not(any(
-    feature = "accel-esp32c3",
-    feature = "accel-esp32c6",
-    feature = "accel-esp32h2"
-)))]
+#[cfg(not(any(feature = "esp32c3", feature = "esp32c6", feature = "esp32h2")))]
 use crypto_bigint::U4096;
 use crypto_bigint::{U1024, U2048, U512};
-#[cfg(not(feature = "accel-esp32"))]
+#[cfg(not(feature = "esp32"))]
 use crypto_bigint::{U256, U384};
 use esp_hal::rsa::{operand_sizes, RsaContext};
 
@@ -20,22 +16,14 @@ use crate::{
     mbedtls_mpi_set_bit, merr, MbedtlsError,
 };
 
-#[cfg(not(feature = "accel-esp32"))]
+#[cfg(not(feature = "esp32"))]
 const SOC_RSA_MIN_BIT_LEN: usize = 256;
-#[cfg(feature = "accel-esp32")]
+#[cfg(feature = "esp32")]
 const SOC_RSA_MIN_BIT_LEN: usize = 512;
 
-#[cfg(not(any(
-    feature = "accel-esp32c3",
-    feature = "accel-esp32c6",
-    feature = "accel-esp32h2"
-)))]
+#[cfg(not(any(feature = "esp32c3", feature = "esp32c6", feature = "esp32h2")))]
 const SOC_RSA_MAX_BIT_LEN: usize = 4096;
-#[cfg(any(
-    feature = "accel-esp32c3",
-    feature = "accel-esp32c6",
-    feature = "accel-esp32h2"
-))]
+#[cfg(any(feature = "esp32c3", feature = "esp32c6", feature = "esp32h2"))]
 const SOC_RSA_MAX_BIT_LEN: usize = 3072;
 
 // Bad input parameters to function.
@@ -47,9 +35,9 @@ macro_rules! modular_exponentiate {
 
         let mut rsa = RsaContext::new();
 
-        #[cfg(not(feature = "accel-esp32"))]
+        #[cfg(not(feature = "esp32"))]
         rsa.enable_acceleration();
-        #[cfg(not(feature = "accel-esp32"))]
+        #[cfg(not(feature = "esp32"))]
         rsa.enable_search_acceleration();
 
         let mut base = [0u32; OP_SIZE];
@@ -96,14 +84,14 @@ impl EspExpMod {
 
     /// Calculate the number of words used for a hardware operation.
     ///
-    /// For every chip except `esp32`, this will return `words`
-    /// For `esp32`, this will return the number of words rounded up to the 512 block count.
+    /// For every chip except `feature = "esp32"`, this will return `words`
+    /// For `feature = "esp32"`, this will return the number of words rounded up to the 512 block count.
     const fn calculate_hw_words(words: usize) -> usize {
         // Round up number of words to nearest
         // 512 bit (16 word) block count.
-        #[cfg(feature = "accel-esp32")]
+        #[cfg(feature = "esp32")]
         return (words + 0xF) & !0xF;
-        #[cfg(not(feature = "accel-esp32"))]
+        #[cfg(not(feature = "esp32"))]
         words
     }
 
@@ -209,7 +197,7 @@ impl MbedtlsMpiExpMod for EspExpMod {
         unwrap!(merr!(unsafe { mbedtls_mpi_grow(z, m_words) }));
 
         match num_words {
-            #[cfg(not(feature = "accel-esp32"))]
+            #[cfg(not(feature = "esp32"))]
             U256::LIMBS => modular_exponentiate!(
                 operand_sizes::Op256,
                 x,
@@ -222,7 +210,7 @@ impl MbedtlsMpiExpMod for EspExpMod {
                 m_words,
                 U256::LIMBS
             ),
-            #[cfg(not(feature = "accel-esp32"))]
+            #[cfg(not(feature = "esp32"))]
             U384::LIMBS => modular_exponentiate!(
                 operand_sizes::Op384,
                 x,
@@ -271,11 +259,7 @@ impl MbedtlsMpiExpMod for EspExpMod {
                 m_words,
                 U2048::LIMBS
             ),
-            #[cfg(not(any(
-                feature = "accel-esp32c3",
-                feature = "accel-esp32c6",
-                feature = "accel-esp32h2"
-            )))]
+            #[cfg(not(any(feature = "esp32c3", feature = "esp32c6", feature = "esp32h2")))]
             U4096::LIMBS => modular_exponentiate!(
                 operand_sizes::Op4096,
                 x,

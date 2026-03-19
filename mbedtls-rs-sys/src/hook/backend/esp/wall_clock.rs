@@ -1,5 +1,4 @@
-use core::cell::Cell;
-use critical_section::Mutex;
+use core::marker::PhantomData;
 
 use crate::bindings::tm;
 use crate::hook::wall_clock::MbedtlsWallClock;
@@ -13,9 +12,9 @@ use crate::hook::wall_clock::MbedtlsWallClock;
 /// ```no_run
 /// use esp_mbedtls_sys::clock::{hook_wall_clock, esp::EspRtcWallClock};
 ///
-/// // Both RTC and wall clock must be static (using static_cell or similar)
-/// static RTC: esp_hal::rtc_cntl::Rtc = /* ... */;
-/// static WALL_CLOCK: EspRtcWallClock = EspRtcWallClock::new(&RTC);
+/// // The wall clock must be static (using static_cell or similar)
+/// let rtc = esp_hal::rtc_cntl::Rtc = /* ... */;
+/// static WALL_CLOCK: EspRtcWallClock<esp_hal::rtc_cntl::Rtc<'static>> = EspRtcWallClock::new(rtc);
 ///
 /// unsafe {
 ///     hook_wall_clock(Some(&WALL_CLOCK));
@@ -26,27 +25,30 @@ use crate::hook::wall_clock::MbedtlsWallClock;
 /// }
 /// ```
 ///
-pub struct EspRtcWallClock {
-    rtc: Mutex<Cell<&'static esp_hal::rtc_cntl::Rtc<'static>>>,
+pub struct EspRtcWallClock<'d, T>
+where
+    T: core::borrow::Borrow<esp_hal::rtc_cntl::Rtc<'d>>,
+{
+    rtc: T,
+    _t: PhantomData<&'d mut ()>,
 }
 
-impl EspRtcWallClock {
-    pub const fn new(rtc: &'static esp_hal::rtc_cntl::Rtc<'static>) -> Self {
+impl<'d, T> EspRtcWallClock<'d, T>
+where
+    T: core::borrow::Borrow<esp_hal::rtc_cntl::Rtc<'d>>,
+{
+    pub const fn new(rtc: T) -> Self {
         Self {
-            rtc: Mutex::new(Cell::new(rtc)),
+            rtc,
+            _t: PhantomData,
         }
     }
-
-    #[inline]
-    fn with_rtc<F, R>(&self, f: F) -> R
-    where
-        F: FnOnce(&esp_hal::rtc_cntl::Rtc<'_>) -> R,
-    {
-        critical_section::with(|cs| f(self.rtc.borrow(cs).get()))
-    }
 }
 
-impl MbedtlsWallClock for EspRtcWallClock {
+impl<'d, T> MbedtlsWallClock for EspRtcWallClock<'d, T>
+where
+    T: core::borrow::Borrow<esp_hal::rtc_cntl::Rtc<'d>>,
+{
     /// Returns the current time from the RTC.
     ///
     /// # Panics
@@ -55,7 +57,7 @@ impl MbedtlsWallClock for EspRtcWallClock {
     /// This can occur if the RTC was not properly initialized with a valid timestamp
     /// (e.g., via NTP or manual setting).
     fn instant(&self) -> tm {
-        let rtc_time_secs = self.with_rtc(|rtc| (rtc.current_time_us() / 1_000_000) as i64);
+        let rtc_time_secs = (self.rtc.borrow().current_time_us() / 1_000_000) as i64;
 
         let datetime = time::OffsetDateTime::from_unix_timestamp(rtc_time_secs)
             .expect("RTC time out of range, ensure RTC is initialized with valid time");

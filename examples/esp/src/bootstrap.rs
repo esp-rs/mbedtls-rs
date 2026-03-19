@@ -14,11 +14,12 @@ use esp_backtrace as _;
 use esp_hal::ram;
 use esp_hal::rng::Trng;
 use esp_hal::rng::TrngSource;
+use esp_hal::rtc_cntl::Rtc;
 use esp_hal::timer::timg::TimerGroup;
 
-use mbedtls_rs::sys::accel::esp::EspAccel;
-use mbedtls_rs::sys::clock::esp::EspRtcWallClock;
-use mbedtls_rs::sys::timer::embassy::EmbassyTimer;
+use mbedtls_rs::sys::hook::backend::embassy::timer::EmbassyTimer;
+use mbedtls_rs::sys::hook::backend::esp::wall_clock::EspRtcWallClock;
+use mbedtls_rs::sys::hook::backend::esp::EspAccel;
 use mbedtls_rs::Tls;
 
 use esp_metadata_generated::memory_range;
@@ -62,8 +63,7 @@ pub async fn bootstrap_stack<const SOCKETS: usize>(
     Tls<'static>,
     Stack<'static>,
     EspAccel<'static>,
-    &'static EmbassyTimer,
-    &'static esp_hal::rtc_cntl::Rtc<'static>,
+    &'static Rtc<'static>,
 ) {
     esp_println::logger::init_logger(log::LevelFilter::Info);
 
@@ -88,10 +88,8 @@ pub async fn bootstrap_stack<const SOCKETS: usize>(
     }
 
     // Setup RTC for EspRtcWallClock
-    let rtc = mk_static!(
-        esp_hal::rtc_cntl::Rtc,
-        esp_hal::rtc_cntl::Rtc::new(peripherals.LPWR)
-    );
+    let rtc = &*mk_static!(Rtc, Rtc::new(peripherals.LPWR));
+
     // In a real-life scenario NTP or equivalent should be used here to initialize the RTC
     rtc.set_current_time_us(
         CURRENT_TIME_MS
@@ -101,7 +99,7 @@ pub async fn bootstrap_stack<const SOCKETS: usize>(
     );
 
     // Make EspRtcWallClock static and "hook it" to mbedtls
-    let clock = mk_static!(EspRtcWallClock, EspRtcWallClock::new(rtc));
+    let clock = mk_static!(EspRtcWallClock<&Rtc>, EspRtcWallClock::new(rtc));
     unsafe {
         mbedtls_rs::sys::hook::wall_clock::hook_wall_clock(Some(clock));
     }
@@ -134,7 +132,7 @@ pub async fn bootstrap_stack<const SOCKETS: usize>(
 
     wait_ip(stack).await;
 
-    (Tls::new(trng).unwrap(), stack, accel, timer, rtc)
+    (Tls::new(trng).unwrap(), stack, accel, rtc)
 }
 
 async fn wait_ip(stack: Stack<'_>) {

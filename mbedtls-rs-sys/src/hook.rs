@@ -8,6 +8,7 @@
 //! "un-hooked" by the user will NOT use the software implementations provided by MbedTLS,
 //! but rather - RustCrypto based ones!
 
+pub mod backend;
 pub mod digest;
 pub mod exp_mod;
 #[cfg(feature = "hook-timer")]

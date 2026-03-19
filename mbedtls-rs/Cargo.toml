@@ -28,25 +28,20 @@ nohook-exp-mod = ["mbedtls-rs-sys/nohook-exp-mod"]
 hook-timer = ["mbedtls-rs-sys/hook-timer"]
 hook-wall-clock = ["mbedtls-rs-sys/hook-wall-clock"]
 
-accel-esp32 = ["mbedtls-rs-sys/accel-esp32"]
-accel-esp32c2 = ["mbedtls-rs-sys/accel-esp32c2"]
-accel-esp32c3 = ["mbedtls-rs-sys/accel-esp32c3"]
-accel-esp32c6 = ["mbedtls-rs-sys/accel-esp32c6"]
-accel-esp32h2 = ["mbedtls-rs-sys/accel-esp32h2"]
-accel-esp32s2 = ["mbedtls-rs-sys/accel-esp32s2"]
-accel-esp32s3 = ["mbedtls-rs-sys/accel-esp32s3"]
+# STD hook impls
+std = ["mbedtls-rs-sys/std"]
 
-timer-embassy = ["mbedtls-rs-sys/timer-embassy"]
-timer-std = ["mbedtls-rs-sys/timer-std"]
+# esp-hal hook impls
+esp32 = ["mbedtls-rs-sys/esp32"]
+esp32c2 = ["mbedtls-rs-sys/esp32c2"]
+esp32c3 = ["mbedtls-rs-sys/esp32c3"]
+esp32c6 = ["mbedtls-rs-sys/esp32c6"]
+esp32h2 = ["mbedtls-rs-sys/esp32h2"]
+esp32s2 = ["mbedtls-rs-sys/esp32s2"]
+esp32s3 = ["mbedtls-rs-sys/esp32s3"]
 
-wall-clock-std = ["mbedtls-rs-sys/wall-clock-std"]
-wall-clock-esp32 = ["mbedtls-rs-sys/wall-clock-esp32"]
-wall-clock-esp32c2 = ["mbedtls-rs-sys/wall-clock-esp32c2"]
-wall-clock-esp32c3 = ["mbedtls-rs-sys/wall-clock-esp32c3"]
-wall-clock-esp32c6 = ["mbedtls-rs-sys/wall-clock-esp32c6"]
-wall-clock-esp32h2 = ["mbedtls-rs-sys/wall-clock-esp32h2"]
-wall-clock-esp32s2 = ["mbedtls-rs-sys/wall-clock-esp32s2"]
-wall-clock-esp32s3 = ["mbedtls-rs-sys/wall-clock-esp32s3"]
+# embassy-time hook impls
+embassy-time = ["mbedtls-rs-sys/embassy-time"]
 
 [dependencies]
 mbedtls-rs-sys = { path = "../mbedtls-rs-sys", default-features = false }
