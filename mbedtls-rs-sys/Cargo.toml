@@ -5,6 +5,10 @@ edition = "2021"
 links = "mbedtls"
 license = "MIT OR Apache-2.0"
 rust-version = "1.84"
+description = "Raw Rust bindings of the MbedTLS library"
+repository = "https://github.com/esp-rs/mbedtls-rs"
+readme = "README.md"
+exclude = ["*.pyc", "mbedtls/framework", "mbedtls/programs", "mbedtls/tests"]
 
 [lib]
 harness = false

@@ -51,7 +51,13 @@ fn main() -> Result<()> {
 
     let dirs = if pregen_bindings && pregen_bindings_rs_file.exists() && !hooks_changed {
         // Use the pre-generated bindings
-        Some((pregen_bindings_rs_file, pregen_libs_dir))
+        let include_dirs = vec![
+            pregen_libs_dir.join("include"),
+            crate_root_path.join("gen").join("hook"),
+            crate_root_path.join("mbedtls").join("include"),
+        ];
+
+        Some((pregen_bindings_rs_file, pregen_libs_dir, include_dirs))
     } else if target.ends_with("-espidf") {
         // Nothing to do for ESP-IDF, `esp-idf-sys` will do everything for us
         None
@@ -85,21 +91,17 @@ fn main() -> Result<()> {
         let artifacts = builder.compile(&out, None)?;
         let bindings = builder.generate_bindings(&out, &artifacts.include_dirs, None)?;
 
-        // TODO: Right now we only set this metadata for on-the-fly builds.
-        //       We also need to set it when using pre-generated
-        //       bindings, but that requires some refactoring.
+        Some((bindings, artifacts.libraries, artifacts.include_dirs))
+    };
 
+    if let Some((bindings, libs_dir, include_dirs)) = dirs {
         println!(
             "cargo::metadata=include={}",
-            env::join_paths(artifacts.include_dirs.iter())
+            env::join_paths(include_dirs.iter())
                 .expect("paths should be valid")
                 .to_string_lossy() // Switch to .display() when MSRV is above 1.87.0.
         );
 
-        Some((bindings, artifacts.libraries))
-    };
-
-    if let Some((bindings, libs_dir)) = dirs {
         println!(
             "cargo::rustc-env=MBEDTLS_RS_SYS_BINDINGS_FILE={}",
             bindings.display()

@@ -337,7 +337,9 @@ impl MbedtlsBuilder {
     /// generated libraries and headers.
     ///
     /// Arguments:
-    /// - `out_path`: Path to write the compiled libraries to
+    /// - `out_path`: Path to use as a scratch space during building.
+    /// - `copy_path`: Optional path to copy the generated libraries to (e.g. for caching or pre-generation purposes).
+    ///   If not specified, the libraries will be placed in the output directory.
     pub fn compile(&self, out_path: &Path, copy_path: Option<&Path>) -> Result<MbedtlsArtifacts> {
         let user_config = self.generate_user_config();
         // Write the user config to a file in the output directory so we can
@@ -379,7 +381,15 @@ impl MbedtlsBuilder {
         // mbedtls' default config header.
         // This removes the need for specifying 'MBEDTLS_USER_CONFIG_FILE'
         // going forward.
-        user_config.append_to_path(&target_include_dir.join("mbedtls/mbedtls_config.h"))?;
+        let target_config_file = target_include_dir.join("mbedtls/mbedtls_config.h");
+        user_config.append_to_path(&target_config_file)?;
+
+        if let Some(copy_path) = copy_path {
+            // If a copy path is specified, also copy the generated config header there.
+            let include_dir = copy_path.join("include").join("mbedtls");
+            std::fs::create_dir_all(&include_dir)?;
+            std::fs::copy(&target_config_file, include_dir.join("mbedtls_config.h"))?;
+        }
 
         Ok(MbedtlsArtifacts {
             include_dirs: vec![target_include_dir, hook_header_dir],
