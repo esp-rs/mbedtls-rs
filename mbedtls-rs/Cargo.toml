@@ -50,6 +50,6 @@ log = { version = "0.4", default-features = false, optional = true }
 embedded-io = { version = "0.7" }
 embedded-io-async = { version = "0.7" }
 enumset = { version = "1", default-features = false }
-rand_core = "0.9"
+rand_core = "0.10.1"
 critical-section = "1"
 edge-nal = { version = "0.6", optional = true }

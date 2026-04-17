@@ -575,7 +575,13 @@ impl CMakeConfigurer {
 
     fn derive_forced_c_compiler(&self) -> Option<(PathBuf, bool)> {
         if self.force_clang {
-            Some((PathBuf::from("clang"), false))
+            Some((
+                std::env::var_os("CLANG_PATH")
+                    .filter(|path| !path.is_empty())
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| PathBuf::from("clang")),
+                false,
+            ))
         } else {
             match self.target().as_str() {
                 "xtensa-esp32-none-elf" | "xtensa-esp32-espidf" => {

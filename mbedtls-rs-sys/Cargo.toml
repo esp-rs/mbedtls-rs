@@ -55,7 +55,7 @@ time = { version = "0.3", default-features = false, optional = true }
 critical-section = "1"
 
 # For esp-hal hook impls
-esp-hal = { version = "1", features = ["unstable"], optional = true }
+esp-hal = { version = "~1.1.0", features = ["unstable"], optional = true }
 crypto-bigint = { version = "0.5.3", default-features = false, features = ["extra-sizes"], optional = true }
 
 # For embassy timer hook impl
