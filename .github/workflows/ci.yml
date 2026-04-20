@@ -32,6 +32,8 @@ env:
   CARGO_TERM_COLOR: always
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+permissions: read-all
+
 # Cancel any currently running workflows from the same PR, branch, or
 # tag when a new workflow is triggered.
 #
@@ -44,13 +46,11 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    permissions: read-all
 
     steps:
-      - uses: actions/checkout@v4
-
-      - name: mbedtls init
-        run: git submodule update --init --recursive
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
 
       - uses: dtolnay/rust-toolchain@v1
         with:
@@ -58,24 +58,26 @@ jobs:
           toolchain: stable
           components: rust-src,rustfmt
 
-      # TODO: Double-check and uncomment
-      # - uses: Swatinem/rust-cache@v2
-      #   with:
-      #     workspaces: |
-      #       ./
-      #       xtask
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            examples/std -> examples/std/target
 
       - name: Fmt Check
-        run: cargo fmt -- --check
+        run: |
+          cargo fmt -- --check
+          cargo fmt --manifest-path examples/std/Cargo.toml -- --check
+          cargo fmt --manifest-path examples/esp/Cargo.toml -- --check
 
       - name: Clippy
         run: cargo clippy -- -D warnings
 
-      - name: Build
+      - name: Build - Clang
         run: cargo build
 
-      - name: Fmt Check - STD Examples
-        run: cd examples/std; cargo fmt -- --check
+      - name: Build - GCC
+        run: cargo build -p mbedtls-rs --features use-gcc
 
       - name: Clippy - STD Examples
         run: cd examples/std; cargo clippy -- -D warnings
@@ -86,71 +88,60 @@ jobs:
   build-mbedtls:
     name: Build MbedTLS
     runs-on: ubuntu-latest
-    permissions: read-all
-    needs: build
     outputs:
       upload-libs: ${{ steps.detect-changes.outputs.libs == 'true' }}
 
     steps:
-      - uses: actions/checkout@v4
-
-      - name: mbedtls init
-        run: git submodule update --init --recursive
-
-      - uses: dtolnay/rust-toolchain@v1
-        with:
-          target: x86_64-unknown-linux-gnu
-          toolchain: nightly
-          components: rust-src,rustfmt
-
-      # TODO: Double-check and uncomment
-      # - uses: Swatinem/rust-cache@v2
-      #   with:
-      #     workspaces: |
-      #       ./
-      #       xtask
+      - uses: actions/checkout@v6
 
       - name: Detect mbedtls-rs-sys/ changes
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         id: detect-changes
         with:
           filters: |
             libs:
               - 'mbedtls-rs-sys/**'
 
-      - name: Detect host target triple
-        run: |
-          export HOST_TARGET=$(rustup show | grep "Default host" | sed -e 's/.* //')
-          echo "HOST_TARGET=$HOST_TARGET" >> $GITHUB_ENV
+      - name: mbedtls init
+        if: |
+          steps.detect-changes.outputs.libs == 'true' ||
+          contains(github.event.pull_request.labels.*.name, 'rebuild-libs')
+        run: git submodule update --init --recursive
 
-      - name: Install espup
-        run: |
-          curl -LO https://github.com/esp-rs/espup/releases/latest/download/espup-${{ env.HOST_TARGET }}.zip
-          unzip -o espup-${{ env.HOST_TARGET }}.zip -d "$HOME/.cargo/bin"
-          chmod +x "$HOME/.cargo/bin/espup"*
-          echo "ESPUP_EXPORT_FILE=$HOME/exports" >> $GITHUB_ENV
+      - uses: dtolnay/rust-toolchain@v1
+        if: |
+          steps.detect-changes.outputs.libs == 'true' ||
+          contains(github.event.pull_request.labels.*.name, 'rebuild-libs')
+        with:
+          target: x86_64-unknown-linux-gnu
+          toolchain: nightly
+          components: rust-src,rustfmt
 
-      - name: Install espup toolchains (xtensa and riscv)
-        run: |
-          source "$HOME/.cargo/env"
-          "$HOME/.cargo/bin/espup" install -e -r
-          source "$HOME/exports"
-          echo "${LIBCLANG_PATH}/../bin:$PATH" >> "$GITHUB_PATH"
-          echo "LIBCLANG_PATH=${LIBCLANG_PATH}" >> "$GITHUB_ENV"
-          echo "CLANG_PATH=${CLANG_PATH}" >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@v2
+        if: |
+          steps.detect-changes.outputs.libs == 'true' ||
+          contains(github.event.pull_request.labels.*.name, 'rebuild-libs')
+        with:
+          workspaces: |
+            . -> target
+            xtask -> xtask/target
 
-# TODO: Remove the manual espup installation and run once the action below
-# supports the `-r` flag to install the Espressif RISCV GCC toolchain
-# See https://github.com/esp-rs/xtensa-toolchain/issues/45 for more info
-#      - name: Install Rust for Xtensa and Espressif LLVM installation (optional)
-#        uses: esp-rs/xtensa-toolchain@v1.6
-#        with:
-#          ldproxy: true
-#          override: false
-#          extended-llvm: ${{
-#            steps.detect-changes.outputs.libs == 'true' ||
-#            contains(github.event.pull_request.labels.*.name, 'rebuild-libs')
-#            }}
+      - name: Install Rust for Xtensa and Espressif LLVM installation (optional)
+        if: |
+          steps.detect-changes.outputs.libs == 'true' ||
+          contains(github.event.pull_request.labels.*.name, 'rebuild-libs')
+        uses: esp-rs/xtensa-toolchain@v1.7
+        with:
+          ldproxy: true
+          override: false
+          extended-llvm: ${{
+            steps.detect-changes.outputs.libs == 'true' ||
+            contains(github.event.pull_request.labels.*.name, 'rebuild-libs')
+            }}
+          esp-riscv-gcc: ${{
+            steps.detect-changes.outputs.libs == 'true' ||
+            contains(github.event.pull_request.labels.*.name, 'rebuild-libs')
+            }}
 
       - name: Build MbedTLS libraries and bindings
         if: |
@@ -169,10 +160,11 @@ jobs:
           (steps.detect-changes.outputs.libs == 'true' &&
           github.ref == 'refs/heads/main') ||
           contains(github.event.pull_request.labels.*.name, 'rebuild-libs')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mbedtls-rs-sys
           retention-days: 1
+          if-no-files-found: error
           path: |
             mbedtls-rs-sys/libs
             mbedtls-rs-sys/src/include
@@ -180,8 +172,7 @@ jobs:
   build-mcu:
     name: Build-MCU
     runs-on: ubuntu-latest
-    permissions: read-all
-    needs: build-mbedtls
+    needs: build
     strategy:
       fail-fast: false
       matrix:
@@ -195,64 +186,40 @@ jobs:
 # No Wifi support on esp32h2
 #          - [esp, esp32h2, riscv32imac-unknown-none-elf]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
 
       - uses: dtolnay/rust-toolchain@v1
         with:
           target: x86_64-unknown-linux-gnu
           toolchain: nightly
-          components: rust-src,rustfmt,clippy
+          components: rust-src,clippy
 
       - name: Install MCU target
         if: startsWith(matrix.mcu[2], 'riscv32')
         run: rustup target add ${{ matrix.mcu[2] }}
 
-      - name: Install Rust for Xtensa
-        if: startsWith(matrix.mcu[2], 'xtensa-')
-        uses: esp-rs/xtensa-toolchain@v1.6
+      - name: Install Espressif toolchains
+        uses: esp-rs/xtensa-toolchain@v1.7
         with:
-          default: true
+          default: ${{ startsWith(matrix.mcu[2], 'xtensa-') }}
           ldproxy: true
+          override: false
+          extended-llvm: true
+          esp-riscv-gcc: true
 
-      # TODO: Double-check and uncomment
-      # - uses: Swatinem/rust-cache@v2
-      #   with:
-      #     workspaces: |
-      #       ./
-      #       xtask
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            examples/esp -> examples/esp/target
 
       - name: Clippy
         run: cargo clippy --features ${{ matrix.mcu[1] }} --target ${{ matrix.mcu[2] }} -Zbuild-std=core,alloc,panic_abort -- -D warnings
 
-      - name: Build
+      - name: Build - Clang
         run: cargo build --features ${{ matrix.mcu[1] }} --target ${{ matrix.mcu[2] }} -Zbuild-std=core,alloc,panic_abort
-
-      - name: Fmt Check - Examples
-        run: cd examples/${{ matrix.mcu[0] }}; cargo fmt -- --check
-
-      - name: mbedtls init
-        run: git submodule update --init --recursive
-
-      - name: Detect host target triple
-        run: |
-          export HOST_TARGET=$(rustup show | grep "Default host" | sed -e 's/.* //')
-          echo "HOST_TARGET=$HOST_TARGET" >> $GITHUB_ENV
-
-      - name: Install espup
-        run: |
-          curl -LO https://github.com/esp-rs/espup/releases/latest/download/espup-${{ env.HOST_TARGET }}.zip
-          unzip -o espup-${{ env.HOST_TARGET }}.zip -d "$HOME/.cargo/bin"
-          chmod +x "$HOME/.cargo/bin/espup"*
-          echo "ESPUP_EXPORT_FILE=$HOME/exports" >> $GITHUB_ENV
-
-      - name: Install espup toolchains (xtensa and riscv)
-        run: |
-          source "$HOME/.cargo/env"
-          "$HOME/.cargo/bin/espup" install -e -r
-          source "$HOME/exports"
-          echo "${LIBCLANG_PATH}/../bin:$PATH" >> "$GITHUB_PATH"
-          echo "LIBCLANG_PATH=${LIBCLANG_PATH}" >> "$GITHUB_ENV"
-          echo "CLANG_PATH=${CLANG_PATH}" >> "$GITHUB_ENV"
 
       - name: Clippy - Examples
         run: export WIFI_SSID=ssid; export WIFI_PASS=pass; cd examples/${{ matrix.mcu[0] }}; cargo clippy --no-default-features --features ${{ matrix.mcu[1] }} --target ${{ matrix.mcu[2] }} -Zbuild-std=core,alloc,panic_abort -- -D warnings
@@ -260,11 +227,16 @@ jobs:
       - name: Build - Examples
         run: export WIFI_SSID=ssid; export WIFI_PASS=pass; cd examples/${{ matrix.mcu[0] }}; cargo build --no-default-features --features ${{ matrix.mcu[1] }} --target ${{ matrix.mcu[2] }} -Zbuild-std=core,alloc,panic_abort
 
+      # `force-esp-riscv-gcc` implies `use-gcc`; its RISC-V compiler override
+      # only affects RISC-V targets, so it is safe to use for the Xtensa check too.
+      - name: Build - Examples - GCC
+        if: matrix.mcu[1] == 'esp32s3' || matrix.mcu[1] == 'esp32c6'
+        run: export WIFI_SSID=ssid; export WIFI_PASS=pass; cd examples/${{ matrix.mcu[0] }}; cargo build --no-default-features --features ${{ matrix.mcu[1] }},mbedtls-rs/force-esp-riscv-gcc,mbedtls-rs/force-generate-bindings --target ${{ matrix.mcu[2] }} -Zbuild-std=core,alloc,panic_abort
+
   build-esp-idf:
     name: Build-ESP-IDF
     runs-on: ubuntu-latest
-    permissions: read-all
-    needs: build-mcu
+    needs: build
     strategy:
       fail-fast: false
       matrix:
@@ -278,13 +250,13 @@ jobs:
 # No Wifi support on esp32h2
 #          - [std, esp32h2, riscv32imac-esp-espidf]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@v1
         with:
           target: x86_64-unknown-linux-gnu
           toolchain: nightly
-          components: rust-src,rustfmt,clippy
+          components: rust-src,clippy
 
       - name: Install MCU target
         if: startsWith(matrix.mcu[2], 'riscv32')
@@ -292,26 +264,22 @@ jobs:
 
       - name: Install Rust for Xtensa
         if: startsWith(matrix.mcu[2], 'xtensa-')
-        uses: esp-rs/xtensa-toolchain@v1.6
+        uses: esp-rs/xtensa-toolchain@v1.7
         with:
           default: true
           ldproxy: true
 
-      # TODO: Double-check and uncomment
-      # - uses: Swatinem/rust-cache@v2
-      #   with:
-      #     workspaces: |
-      #       ./
-      #       xtask
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            examples/std -> examples/std/target
 
       - name: Clippy
         run: cargo clippy --target ${{ matrix.mcu[2] }} -Zbuild-std=std,panic_abort -- -D warnings
 
-      - name: Build
+      - name: Build - Clang
         run: cargo build --target ${{ matrix.mcu[2] }} -Zbuild-std=std,panic_abort
-
-      - name: Fmt Check - Examples
-        run: cd examples/${{ matrix.mcu[0] }}; cargo fmt -- --check
 
       - name: Clippy - Examples
         run: export WIFI_SSID=ssid; export WIFI_PASS=pass; cd examples/${{ matrix.mcu[0] }}; cargo clippy --target ${{ matrix.mcu[2] }} -Zbuild-std=std,panic_abort -- -D warnings
@@ -326,7 +294,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    needs: build-esp-idf
+    needs:
+      - build-mbedtls
+      - build-mcu
+      - build-esp-idf
     # TODO: Currently GitHub doesn't allow pushing to a forked repo's branch when running an action on a PR to upstream.
     if: |
       github.event.pull_request.head.repo.full_name == github.repository &&
@@ -334,7 +305,7 @@ jobs:
       github.ref == 'refs/heads/main') ||
       contains(github.event.pull_request.labels.*.name, 'rebuild-libs'))
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           # In a pull request trigger, ref is required as GitHub Actions checks out in detached HEAD mode,
           # meaning it doesn’t check out your branch by default.
@@ -343,7 +314,7 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
 
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: mbedtls-rs-sys
           # Required because else artifacts will be put into the base directory
