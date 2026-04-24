@@ -11,7 +11,7 @@ use core::ptr::NonNull;
 use critical_section::Mutex;
 
 #[cfg(not(target_os = "espidf"))]
-use crate::sys::{mbedtls_calloc, mbedtls_free};
+pub(crate) use crate::sys::{mbedtls_calloc, mbedtls_free};
 use crate::sys::{
     mbedtls_ctr_drbg_context, mbedtls_ctr_drbg_free, mbedtls_ctr_drbg_init, mbedtls_pk_context,
     mbedtls_pk_free, mbedtls_pk_init, mbedtls_ssl_conf_dbg, mbedtls_ssl_config,
@@ -454,7 +454,7 @@ unsafe extern "C" fn mbedtls_platform_zeroize(dst: *mut c_uchar, len: u32) {
 #[cfg(target_os = "espidf")]
 extern "C" {
     #[link_name = "calloc"]
-    fn mbedtls_calloc(num: usize, size: usize) -> *mut c_void;
+    pub(crate) fn mbedtls_calloc(num: usize, size: usize) -> *mut c_void;
     #[link_name = "free"]
-    fn mbedtls_free(ptr: *mut c_void);
+    pub(crate) fn mbedtls_free(ptr: *mut c_void);
 }
