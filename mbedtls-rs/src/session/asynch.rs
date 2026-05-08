@@ -88,6 +88,20 @@ where
         unsafe { mbedtls_ssl_get_verify_result(&*self.state.ssl_context) }
     }
 
+    /// Get the negotiated ALPN protocol, if any.
+    ///
+    /// NOTE: This function should be called only after a `connect()` call.
+    pub fn tls_alpn(&self) -> Option<&CStr> {
+        unsafe {
+            let ptr = mbedtls_ssl_get_alpn_protocol(&*self.state.ssl_context);
+            if ptr.is_null() {
+                None
+            } else {
+                Some(CStr::from_ptr(ptr))
+            }
+        }
+    }
+
     /// Get a mutable reference to the underlying stream
     pub fn stream(&mut self) -> &mut T {
         &mut self.stream

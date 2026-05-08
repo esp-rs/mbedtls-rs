@@ -1,9 +1,14 @@
-use core::ffi::{c_int, c_void, CStr};
+use core::ffi::{c_char, c_int, c_void, CStr};
+use core::marker::PhantomData;
+use core::ptr::NonNull;
 
 use embedded_io::{Error, ErrorKind};
 
 use super::sys::*;
-use super::{mbedtls_rng, Certificate, MBox, PrivateKey, Tls, TlsReference, TlsVersion};
+use super::{
+    mbedtls_calloc, mbedtls_free, mbedtls_rng, Certificate, MBox, PrivateKey, Tls, TlsReference,
+    TlsVersion,
+};
 
 pub use asynch::*;
 
@@ -72,6 +77,8 @@ pub struct ClientSessionConfig<'a> {
     pub auth_mode: AuthMode,
     /// The minimum TLS version that will be supported by a particular `Session` instance
     pub min_version: TlsVersion,
+    /// ALPN protocols
+    pub alpn_protocols: Option<&'a [&'a CStr]>,
 }
 
 impl<'a> Default for ClientSessionConfig<'a> {
@@ -88,6 +95,7 @@ impl<'a> ClientSessionConfig<'a> {
             server_name: None,
             auth_mode: AuthMode::Required,
             min_version: TlsVersion::Tls1_2,
+            alpn_protocols: None,
         }
     }
 }
@@ -108,6 +116,8 @@ pub struct ServerSessionConfig<'a> {
     pub auth_mode: AuthMode,
     /// The minimum TLS version that will be supported by a particular `Session` instance
     pub min_version: TlsVersion,
+    /// ALPN protocols
+    pub alpn_protocols: Option<&'a [&'a CStr]>,
 }
 
 impl<'a> ServerSessionConfig<'a> {
@@ -117,6 +127,7 @@ impl<'a> ServerSessionConfig<'a> {
             creds,
             auth_mode: AuthMode::None,
             min_version: TlsVersion::Tls1_2,
+            alpn_protocols: None,
         }
     }
 }
@@ -158,10 +169,55 @@ impl<'a> SessionConfig<'a> {
         }
     }
 
+    fn alpn_protocols(&self) -> Option<&'a [&'a CStr]> {
+        match self {
+            SessionConfig::Client(ClientSessionConfig { alpn_protocols, .. }) => *alpn_protocols,
+            SessionConfig::Server(ServerSessionConfig { alpn_protocols, .. }) => *alpn_protocols,
+        }
+    }
+
     fn raw_mode(&self) -> c_int {
         match self {
             Self::Client { .. } => MBEDTLS_SSL_IS_CLIENT as c_int,
             Self::Server { .. } => MBEDTLS_SSL_IS_SERVER as c_int,
+        }
+    }
+}
+
+/// RAII storage for an array of ALPN protocol names. Per mbedtls requirements,
+/// the array is always terminated with a NULL pointer. The array is allocated
+/// via mbedtls_calloc, but the pointers stored in the array refer to memory
+/// owned by the original CStr, hence the lifetime bound.
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+struct ALPNArray<'a>(NonNull<*const c_char>, PhantomData<&'a CStr>);
+
+impl<'a> ALPNArray<'a> {
+    pub fn from_slice(slice: &'a [&'a CStr]) -> Option<Self> {
+        NonNull::new(
+            unsafe { mbedtls_calloc(slice.len() + 1, size_of::<*const c_char>()) }
+                .cast::<*const c_char>(),
+        )
+        .map(|ptr| {
+            // we allocate the memory via calloc, so it is zero-filled
+            // we fill all the entries excluding the null terminator
+            let output = unsafe { core::slice::from_raw_parts_mut(ptr.as_ptr(), slice.len()) };
+            for (index, element) in slice.iter().enumerate() {
+                output[index] = element.as_ptr()
+            }
+            Self(ptr, PhantomData)
+        })
+    }
+
+    pub fn as_ptr(&self) -> *mut *const c_char {
+        self.0.as_ptr()
+    }
+}
+
+impl<'a> Drop for ALPNArray<'a> {
+    fn drop(&mut self) {
+        unsafe {
+            mbedtls_free(self.0.as_ptr() as *mut c_void);
         }
     }
 }
@@ -190,6 +246,11 @@ struct SessionState<'a> {
     /// While not explicitly used, we need to keep a reference to it as it is used
     /// by the SSL context via a raw pointer
     _creds: Option<Credentials<'a>>,
+    /// ALPN protocol array
+    ///
+    /// While not explicitly used, we need to keep a reference to it as it is used
+    /// by the SSL context via a raw pointer
+    _alpn_ptrs: Option<ALPNArray<'a>>,
 }
 
 impl<'a> SessionState<'a> {
@@ -238,6 +299,15 @@ impl<'a> SessionState<'a> {
             }
         }
 
+        let alpn = if let Some(alpn_protocols) = conf.alpn_protocols() {
+            let alpn = ALPNArray::from_slice(alpn_protocols)
+                .ok_or(MbedtlsError::new(MBEDTLS_ERR_SSL_ALLOC_FAILED))?;
+            merr!(unsafe { mbedtls_ssl_conf_alpn_protocols(&mut *ssl_config, alpn.as_ptr()) })?;
+            Some(alpn)
+        } else {
+            None
+        };
+
         let mut drbg_context =
             MBox::new().ok_or(MbedtlsError::new(MBEDTLS_ERR_SSL_ALLOC_FAILED))?;
 
@@ -268,6 +338,7 @@ impl<'a> SessionState<'a> {
             _ssl_config: ssl_config,
             _ca_chain: conf.ca_chain().cloned(),
             _creds: conf.creds().cloned(),
+            _alpn_ptrs: alpn,
         })
     }
 }
