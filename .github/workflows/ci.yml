@@ -192,6 +192,7 @@ jobs:
           - [esp, esp32c2, riscv32imc-unknown-none-elf]
           - [esp, esp32c3, riscv32imc-unknown-none-elf]
           - [esp, esp32c6, riscv32imac-unknown-none-elf]
+          - [esp, esp32c5, riscv32imac-unknown-none-elf]
 # No Wifi support on esp32h2
 #          - [esp, esp32h2, riscv32imac-unknown-none-elf]
     steps:

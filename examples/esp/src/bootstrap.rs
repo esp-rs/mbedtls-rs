@@ -2,22 +2,34 @@
 
 use embassy_executor::Spawner;
 
-use embassy_net::{Runner, Stack, StackResources};
+use embassy_net::{Stack, StackResources};
 
+#[cfg(not(feature = "esp32c5"))]
+use embassy_net::Runner;
+
+#[cfg(not(feature = "esp32c5"))]
 use embassy_time::Duration;
+#[cfg(not(feature = "esp32c5"))]
 use embassy_time::Timer;
 
+#[cfg(not(feature = "esp32c5"))]
 use esp_alloc::heap_allocator;
 
 use esp_backtrace as _;
 
+#[cfg(not(feature = "esp32c5"))]
 use esp_hal::ram;
+#[cfg(not(feature = "esp32c5"))]
 use esp_hal::rng::Trng;
+#[cfg(not(feature = "esp32c5"))]
 use esp_hal::rng::TrngSource;
 use esp_hal::rtc_cntl::Rtc;
+#[cfg(not(feature = "esp32c5"))]
 use esp_hal::timer::timg::TimerGroup;
 
+#[cfg(not(feature = "esp32c5"))]
 use mbedtls_rs::sys::hook::backend::embassy::timer::EmbassyTimer;
+#[cfg(not(feature = "esp32c5"))]
 use mbedtls_rs::sys::hook::backend::esp::wall_clock::EspRtcWallClock;
 use mbedtls_rs::sys::hook::backend::esp::EspAccel;
 use mbedtls_rs::Tls;
@@ -25,13 +37,20 @@ use mbedtls_rs::Tls;
 use esp_metadata_generated::memory_range;
 
 use esp_radio as _;
+#[cfg(not(feature = "esp32c5"))]
 use esp_radio::wifi::scan::ScanConfig;
+#[cfg(not(feature = "esp32c5"))]
 use esp_radio::wifi::sta::StationConfig;
+#[cfg(not(feature = "esp32c5"))]
 use esp_radio::wifi::Config;
+#[cfg(not(feature = "esp32c5"))]
 use esp_radio::wifi::ControllerConfig;
+#[cfg(not(feature = "esp32c5"))]
 use esp_radio::wifi::Interface;
+#[cfg(not(feature = "esp32c5"))]
 use esp_radio::wifi::WifiController;
 
+#[cfg(not(feature = "esp32c5"))]
 use log::{error, info};
 
 extern crate alloc;
@@ -52,10 +71,36 @@ pub const RECLAIMED_RAM: usize =
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
+#[cfg(not(feature = "esp32c5"))]
 const WIFI_SSID: &str = env!("WIFI_SSID");
+#[cfg(not(feature = "esp32c5"))]
 const WIFI_PASS: &str = env!("WIFI_PASS");
+#[cfg(not(feature = "esp32c5"))]
 const CURRENT_TIME_MS: &str = env!("CURRENT_TIME_MS");
 
+// esp32c5: esp-hal v1.1 does not yet wire the TRNG (`rng_trng_supported` cfg
+// unset) nor the LP_TIMER driver (`lp_timer_driver_supported` cfg unset), both
+// of which this bootstrap depends on. The c5 path of `bootstrap_stack` therefore
+// panics at runtime per maintainer ask; the rest of the examples crate still
+// builds for c5 so CI catches regressions in the chip-independent code.
+// Re-enable once esp-hal lands the c5 drivers.
+#[cfg(feature = "esp32c5")]
+pub async fn bootstrap_stack<const SOCKETS: usize>(
+    _spawner: Spawner,
+    _stack_resources: &'static mut StackResources<SOCKETS>,
+) -> (
+    Tls<'static>,
+    Stack<'static>,
+    EspAccel<'static>,
+    &'static Rtc<'static>,
+) {
+    panic!(
+        "esp32c5 example bootstrap unsupported: \
+         esp-hal v1.1 lacks TRNG and LP_TIMER drivers for c5"
+    );
+}
+
+#[cfg(not(feature = "esp32c5"))]
 pub async fn bootstrap_stack<const SOCKETS: usize>(
     spawner: Spawner,
     stack_resources: &'static mut StackResources<SOCKETS>,
@@ -153,6 +198,7 @@ pub async fn bootstrap_stack<const SOCKETS: usize>(
     (Tls::new(trng).unwrap(), stack, accel, rtc)
 }
 
+#[cfg(not(feature = "esp32c5"))]
 async fn wait_ip(stack: Stack<'_>) {
     loop {
         if stack.is_link_up() {
@@ -171,6 +217,7 @@ async fn wait_ip(stack: Stack<'_>) {
     }
 }
 
+#[cfg(not(feature = "esp32c5"))]
 #[embassy_executor::task]
 async fn connection(mut controller: WifiController<'static>) {
     info!("start connection task");
@@ -195,6 +242,7 @@ async fn connection(mut controller: WifiController<'static>) {
     }
 }
 
+#[cfg(not(feature = "esp32c5"))]
 #[embassy_executor::task]
 async fn net_task(mut runner: Runner<'static, Interface<'static>>) {
     runner.run().await

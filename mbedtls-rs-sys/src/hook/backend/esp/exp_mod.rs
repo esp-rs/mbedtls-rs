@@ -2,7 +2,12 @@
 
 use core::ffi::c_int;
 
-#[cfg(not(any(feature = "esp32c3", feature = "esp32c6", feature = "esp32h2")))]
+#[cfg(not(any(
+    feature = "esp32c3",
+    feature = "esp32c5",
+    feature = "esp32c6",
+    feature = "esp32h2"
+)))]
 use crypto_bigint::U4096;
 use crypto_bigint::{U1024, U2048, U512};
 #[cfg(not(feature = "esp32"))]
@@ -21,9 +26,19 @@ const SOC_RSA_MIN_BIT_LEN: usize = 256;
 #[cfg(feature = "esp32")]
 const SOC_RSA_MIN_BIT_LEN: usize = 512;
 
-#[cfg(not(any(feature = "esp32c3", feature = "esp32c6", feature = "esp32h2")))]
+#[cfg(not(any(
+    feature = "esp32c3",
+    feature = "esp32c5",
+    feature = "esp32c6",
+    feature = "esp32h2"
+)))]
 const SOC_RSA_MAX_BIT_LEN: usize = 4096;
-#[cfg(any(feature = "esp32c3", feature = "esp32c6", feature = "esp32h2"))]
+#[cfg(any(
+    feature = "esp32c3",
+    feature = "esp32c5",
+    feature = "esp32c6",
+    feature = "esp32h2"
+))]
 const SOC_RSA_MAX_BIT_LEN: usize = 3072;
 
 // Bad input parameters to function.
@@ -259,7 +274,12 @@ impl MbedtlsMpiExpMod for EspExpMod {
                 m_words,
                 U2048::LIMBS
             ),
-            #[cfg(not(any(feature = "esp32c3", feature = "esp32c6", feature = "esp32h2")))]
+            #[cfg(not(any(
+                feature = "esp32c3",
+                feature = "esp32c5",
+                feature = "esp32c6",
+                feature = "esp32h2"
+            )))]
             U4096::LIMBS => modular_exponentiate!(
                 operand_sizes::Op4096,
                 x,
