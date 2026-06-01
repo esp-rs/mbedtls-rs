@@ -39,6 +39,9 @@ async fn main(spawner: Spawner) {
 
     let (mut tls, stack, mut accel, rtc) =
         bootstrap::bootstrap_stack(spawner, stack_resources).await;
+    // esp32c5: rtc time-API path is gated below; silence unused warning.
+    #[cfg(feature = "esp32c5")]
+    let _ = &rtc;
 
     tls.set_debug(1);
 
@@ -60,6 +63,12 @@ async fn main(spawner: Spawner) {
 
         if expired_cert {
             // double current time to cause certificate validation to fail
+            #[cfg(feature = "esp32c5")]
+            panic!(
+                "esp32c5: RTC time manipulation unsupported \
+                 (LP_TIMER driver pending in esp-hal v1.1)"
+            );
+            #[cfg(not(feature = "esp32c5"))]
             rtc.set_current_time_us(rtc.current_time_us() * 2);
         }
 

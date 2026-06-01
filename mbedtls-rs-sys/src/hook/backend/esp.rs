@@ -3,7 +3,10 @@
 pub mod digest;
 #[cfg(not(any(feature = "esp32c2", feature = "nohook-exp-mod")))]
 pub mod exp_mod;
-#[cfg(feature = "hook-wall-clock")]
+// esp32c5: LP_TIMER driver not yet wired in esp-hal v1.1, so `Rtc::current_time_us`
+// and `Rtc::set_current_time_us` are unavailable. Re-enable once esp-hal lands the
+// c5 LP_TIMER driver.
+#[cfg(all(feature = "hook-wall-clock", not(feature = "esp32c5")))]
 pub mod wall_clock;
 
 #[cfg(not(feature = "esp32"))]
