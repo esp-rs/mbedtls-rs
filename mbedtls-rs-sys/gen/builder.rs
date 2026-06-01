@@ -367,7 +367,7 @@ impl MbedtlsBuilder {
             .define("MBEDTLS_FATAL_WARNINGS", "OFF")
             .define("MBEDTLS_USER_CONFIG_FILE", user_config_path)
             .cflag(format!("-I{}", hook_header_dir.display()))
-            .profile("Release")
+            .profile("MinSizeRel")
             .out_dir(&target_dir);
 
         config.build();
@@ -463,7 +463,18 @@ impl CMakeConfigurer {
             config
                 .define("CMAKE_ARCHIVE_OUTPUT_DIRECTORY", target_dir)
                 .define("CMAKE_LIBRARY_OUTPUT_DIRECTORY", target_dir)
-                .define("CMAKE_RUNTIME_OUTPUT_DIRECTORY", target_dir);
+                .define("CMAKE_RUNTIME_OUTPUT_DIRECTORY", target_dir)
+                // Multi-config generators (Ninja Multi-Config, Visual Studio, Xcode)
+                // ignore `CMAKE_BUILD_TYPE` and the unsuffixed *_OUTPUT_DIRECTORY
+                // vars at build time. Restrict the generated configs to
+                // `MinSizeRel` (matching the single-config `CMAKE_BUILD_TYPE`
+                // above and `compile()`'s `.profile("MinSizeRel")`) and pin the
+                // per-config output dirs to `target_dir` so the build script can
+                // locate the produced static libs.
+                .define("CMAKE_CONFIGURATION_TYPES", "MinSizeRel")
+                .define("CMAKE_ARCHIVE_OUTPUT_DIRECTORY_MINSIZEREL", target_dir)
+                .define("CMAKE_LIBRARY_OUTPUT_DIRECTORY_MINSIZEREL", target_dir)
+                .define("CMAKE_RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL", target_dir);
         }
 
         if let Some((compiler, _)) = self.derive_forced_c_compiler() {
