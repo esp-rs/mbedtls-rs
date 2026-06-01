@@ -1,6 +1,6 @@
 # mbedtls-rs
 
-Rust library implementing transparent TLS encryption/decrypton for IO streams.
+Rust library implementing transparent TLS encryption/decryption for IO streams.
 `no_std` compatible (but needs `alloc`!) and thus suitable for use on baremetal MCUs.
 
 Uses MbedTLS 3.X under the hood, via `mbedtls-rs-sys`.

@@ -50,8 +50,25 @@ fn main() -> Result<()> {
     let hooks_changed = hooks != builder::DEFAULT_HOOKS;
 
     let dirs = if pregen_bindings && pregen_bindings_rs_file.exists() && !hooks_changed {
-        // Use the pre-generated bindings
-        Some((pregen_bindings_rs_file, pregen_libs_dir))
+        // Use the pre-generated bindings.
+        //
+        // Order matters here and is deliberate. Both `<pregen_libs_dir>/include`
+        // and `mbedtls/include` ship a `mbedtls/mbedtls_config.h`:
+        //   - The first one is the pre-generated, post-hook merged config
+        //     produced by `compile()`'s `copy_path` arm — this is what
+        //     downstream consumers must see.
+        //   - The second is the upstream mbedtls submodule's default config.
+        // Putting `<pregen_libs_dir>/include` first ensures the merged config
+        // shadows the upstream one on the C include path. `mbedtls/include` is
+        // kept last so the rest of the upstream headers (everything except the
+        // duplicated `mbedtls_config.h`) remain available to consumers.
+        let include_dirs = vec![
+            pregen_libs_dir.join("include"),
+            crate_root_path.join("gen").join("hook"),
+            crate_root_path.join("mbedtls").join("include"),
+        ];
+
+        Some((pregen_bindings_rs_file, pregen_libs_dir, include_dirs))
     } else if target.ends_with("-espidf") {
         // Nothing to do for ESP-IDF, `esp-idf-sys` will do everything for us
         None
@@ -85,21 +102,17 @@ fn main() -> Result<()> {
         let artifacts = builder.compile(&out, None)?;
         let bindings = builder.generate_bindings(&out, &artifacts.include_dirs, None)?;
 
-        // TODO: Right now we only set this metadata for on-the-fly builds.
-        //       We also need to set it when using pre-generated
-        //       bindings, but that requires some refactoring.
+        Some((bindings, artifacts.libraries, artifacts.include_dirs))
+    };
 
+    if let Some((bindings, libs_dir, include_dirs)) = dirs {
         println!(
             "cargo::metadata=include={}",
-            env::join_paths(artifacts.include_dirs.iter())
+            env::join_paths(include_dirs.iter())
                 .expect("paths should be valid")
                 .to_string_lossy() // Switch to .display() when MSRV is above 1.87.0.
         );
 
-        Some((bindings, artifacts.libraries))
-    };
-
-    if let Some((bindings, libs_dir)) = dirs {
         println!(
             "cargo::rustc-env=MBEDTLS_RS_SYS_BINDINGS_FILE={}",
             bindings.display()

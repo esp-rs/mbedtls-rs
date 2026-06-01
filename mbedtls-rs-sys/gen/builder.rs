@@ -337,7 +337,9 @@ impl MbedtlsBuilder {
     /// generated libraries and headers.
     ///
     /// Arguments:
-    /// - `out_path`: Path to write the compiled libraries to
+    /// - `out_path`: Path to use as a scratch space during building.
+    /// - `copy_path`: Optional path to copy the generated libraries to (e.g. for caching or pre-generation purposes).
+    ///   If not specified, the libraries will be placed in the output directory.
     pub fn compile(&self, out_path: &Path, copy_path: Option<&Path>) -> Result<MbedtlsArtifacts> {
         let user_config = self.generate_user_config();
         // Write the user config to a file in the output directory so we can
@@ -371,18 +373,47 @@ impl MbedtlsBuilder {
             .define("MBEDTLS_USER_CONFIG_FILE", user_config_path)
             .cflag(format!("-I{}", hook_header_dir.display()))
             .profile("MinSizeRel")
-            .out_dir(&target_dir);
+            .out_dir(&target_dir)
+            // The `cmake` crate defaults to running `cmake --build . --target install`.
+            // mbedtls' install target writes pkg-config files, CMake helpers, and
+            // 3rdparty (everest/p256m) artifacts into the install prefix. Some host
+            // setups (notably the rs-matter integration runners) fail during that
+            // step. We harvest the build outputs directly from `target_dir` via the
+            // CMAKE_*_OUTPUT_DIRECTORY defines, so the install target is unnecessary.
+            .no_build_target(true);
 
         config.build();
 
-        // Now that MbedTLS is compiled, manually append our user config to
-        // mbedtls' default config header.
+        // Now that MbedTLS is compiled, materialize a writable copy of the
+        // upstream `mbedtls_config.h` and append our user config to it.
         // This removes the need for specifying 'MBEDTLS_USER_CONFIG_FILE'
         // going forward.
-        user_config.append_to_path(&target_include_dir.join("mbedtls/mbedtls_config.h"))?;
+        //
+        // Since we skip the install target (see `.no_build_target(true)` above),
+        // we seed the file from the upstream submodule headers and place it in
+        // a dedicated scratch include dir that will shadow the upstream one via
+        // include-search order.
+        let upstream_include_dir = self.crate_root_path.join("mbedtls").join("include");
+        let target_mbedtls_include_dir = target_include_dir.join("mbedtls");
+        std::fs::create_dir_all(&target_mbedtls_include_dir)?;
+        let target_config_file = target_mbedtls_include_dir.join("mbedtls_config.h");
+        std::fs::copy(
+            upstream_include_dir
+                .join("mbedtls")
+                .join("mbedtls_config.h"),
+            &target_config_file,
+        )?;
+        user_config.append_to_path(&target_config_file)?;
+
+        if let Some(copy_path) = copy_path {
+            // If a copy path is specified, also copy the generated config header there.
+            let include_dir = copy_path.join("include").join("mbedtls");
+            std::fs::create_dir_all(&include_dir)?;
+            std::fs::copy(&target_config_file, include_dir.join("mbedtls_config.h"))?;
+        }
 
         Ok(MbedtlsArtifacts {
-            include_dirs: vec![target_include_dir, hook_header_dir],
+            include_dirs: vec![target_include_dir, upstream_include_dir, hook_header_dir],
             libraries: lib_dir.to_path_buf(),
         })
     }
