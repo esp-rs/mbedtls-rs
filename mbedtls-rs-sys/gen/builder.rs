@@ -239,7 +239,10 @@ impl MbedtlsBuilder {
         }
 
         if self.hooks.contains(Hook::Timer) {
-            builder = builder.allowlist_item("time_t");
+            builder = builder
+                .allowlist_item("time_t")
+                .allowlist_item("__int_least64_t")
+                .allowlist_item("__int64_t");
         }
 
         if self.hooks.contains(Hook::WallClock) {
