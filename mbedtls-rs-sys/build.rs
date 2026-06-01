@@ -50,7 +50,18 @@ fn main() -> Result<()> {
     let hooks_changed = hooks != builder::DEFAULT_HOOKS;
 
     let dirs = if pregen_bindings && pregen_bindings_rs_file.exists() && !hooks_changed {
-        // Use the pre-generated bindings
+        // Use the pre-generated bindings.
+        //
+        // Order matters here and is deliberate. Both `<pregen_libs_dir>/include`
+        // and `mbedtls/include` ship a `mbedtls/mbedtls_config.h`:
+        //   - The first one is the pre-generated, post-hook merged config
+        //     produced by `compile()`'s `copy_path` arm — this is what
+        //     downstream consumers must see.
+        //   - The second is the upstream mbedtls submodule's default config.
+        // Putting `<pregen_libs_dir>/include` first ensures the merged config
+        // shadows the upstream one on the C include path. `mbedtls/include` is
+        // kept last so the rest of the upstream headers (everything except the
+        // duplicated `mbedtls_config.h`) remain available to consumers.
         let include_dirs = vec![
             pregen_libs_dir.join("include"),
             crate_root_path.join("gen").join("hook"),
