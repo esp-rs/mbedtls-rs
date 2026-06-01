@@ -6,3 +6,9 @@ members = [
 ]
 
 exclude = ["examples", "xtask"]
+
+[patch.crates-io]
+# Patch until https://github.com/sysgrok/edge-net/commit/1f084b41944c35b233cbe17accfbc09a56d5eaf0 is released
+edge-nal = { git = "https://github.com/sysgrok/edge-net", rev = "1f084b4" }
+edge-nal-embassy = { git = "https://github.com/sysgrok/edge-net", rev = "1f084b4" }
+edge-http = { git = "https://github.com/sysgrok/edge-net", rev = "1f084b4" }
