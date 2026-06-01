@@ -51,8 +51,8 @@ async fn main(spawner: Spawner) {
 
     let tls = mk_static!(Tls, tls);
 
-    spawner.spawn(http_task("Task 1", tls, stack)).ok();
-    spawner.spawn(http_task("Task 2", tls, stack)).ok();
+    spawner.spawn(http_task("Task 1", tls, stack).unwrap());
+    spawner.spawn(http_task("Task 2", tls, stack).unwrap());
 
     // Don't exit so that the acceleration routines can stay registered
     core::future::pending::<()>().await

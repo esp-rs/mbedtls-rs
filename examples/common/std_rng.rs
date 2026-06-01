@@ -1,20 +1,25 @@
-use rand::{CryptoRng, RngCore};
+use core::convert::Infallible;
+
+use rand::{Rng, TryCryptoRng, TryRng};
 
 /// A standard, crypto-compliant random number generator using the `rand` crate which is `Send`.
 pub struct StdRng;
 
-impl RngCore for StdRng {
-    fn next_u32(&mut self) -> u32 {
-        rand::rng().next_u32()
+impl TryRng for StdRng {
+    type Error = Infallible;
+
+    fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
+        Ok(rand::rng().next_u32())
     }
 
-    fn next_u64(&mut self) -> u64 {
-        rand::rng().next_u64()
+    fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
+        Ok(rand::rng().next_u64())
     }
 
-    fn fill_bytes(&mut self, dst: &mut [u8]) {
+    fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Self::Error> {
         rand::rng().fill_bytes(dst);
+        Ok(())
     }
 }
 
-impl CryptoRng for StdRng {}
+impl TryCryptoRng for StdRng {}

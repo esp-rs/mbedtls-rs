@@ -6,16 +6,6 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 rust-version = "1.84"
 
-[patch.crates-io]
-esp-rtos = { git = "https://github.com/esp-rs/esp-hal", rev="8a9fd5e" }
-esp-hal = { git = "https://github.com/esp-rs/esp-hal", rev="8a9fd5e" }
-esp-alloc = { git = "https://github.com/esp-rs/esp-hal", rev="8a9fd5e" }
-esp-backtrace = { git = "https://github.com/esp-rs/esp-hal", rev="8a9fd5e" }
-esp-println = { git = "https://github.com/esp-rs/esp-hal", rev="8a9fd5e" }
-esp-radio = { git = "https://github.com/esp-rs/esp-hal", rev="8a9fd5e" }
-esp-bootloader-esp-idf = { git = "https://github.com/esp-rs/esp-hal", rev="8a9fd5e" }
-esp-metadata-generated = { git = "https://github.com/esp-rs/esp-hal", rev="8a9fd5e" }
-
  # For some reason, opt-level "z" or "s" results in a much smaller HW accel
 [profile.release.package.esp-hal]
 opt-level = 3
@@ -48,25 +38,24 @@ critical-section = "1"
 heapless = "0.9"
 static_cell = "2"
 enumset = { version = "1", default-features = false }
-rand_core = "0.9"
+rand_core = "0.10.1"
 mbedtls-rs = { path = "../../mbedtls-rs", features = ["log", "hook-wall-clock"] }
 sha1 = { version = "0.10", default-features = false }
 tinyrlibc = { version = "0.5", default-features = false, features = ["memchr"] }
 
 embassy-time = "0.5"
-embassy-executor = "0.9"
+embassy-executor = "0.10"
 embassy-net = "0.8"
 
 # For the `edge_*` examples
 edge-http = { version = "0.7", features = ["io"] }
 edge-nal-embassy = "0.8"
 
-esp-rtos = { version = "0.2", features = ["esp-radio", "embassy"] }
-esp-hal = { version = "1", features = ["log-04", "unstable", "exception-handler"] }
-esp-alloc = { version = "0.9" }
-esp-backtrace = { version = "0.18.1", features = ["panic-handler", "println"] }
-esp-println = { version = "0.16", optional = true, features = ["log-04"] }
-esp-radio = { version = "0.17", features = ["wifi", "log-04", "unstable"] }
-esp-bootloader-esp-idf = { version = "0.4", features = ["log-04"] }
-esp-metadata-generated = "0.3"
-#esp-rom-sys = "0.1"
+esp-rtos = { version = "0.3", features = ["esp-radio", "embassy"] }
+esp-hal = { version = "~1.1.0", features = ["log-04", "unstable", "exception-handler"] }
+esp-alloc = { version = "0.10" }
+esp-backtrace = { version = "0.19.0", features = ["panic-handler", "println"] }
+esp-println = { version = "0.17", optional = true, features = ["log-04"] }
+esp-radio = { version = "0.18", features = ["wifi", "log-04", "unstable"] }
+esp-bootloader-esp-idf = { version = "0.5", features = ["log-04"] }
+esp-metadata-generated = "0.4"
