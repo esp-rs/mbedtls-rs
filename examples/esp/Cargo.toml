@@ -45,7 +45,7 @@ tinyrlibc = { version = "0.5", default-features = false, features = ["memchr"] }
 
 embassy-time = "0.5"
 embassy-executor = "0.10"
-embassy-net = "0.8"
+embassy-net = "0.9"
 
 # For the `edge_*` examples
 edge-http = { version = "0.7", features = ["io"] }
@@ -59,3 +59,9 @@ esp-println = { version = "0.17", optional = true, features = ["log-04"] }
 esp-radio = { version = "0.18", features = ["wifi", "log-04", "unstable"] }
 esp-bootloader-esp-idf = { version = "0.5", features = ["log-04"] }
 esp-metadata-generated = "0.4"
+
+[patch.crates-io]
+# Patch until https://github.com/sysgrok/edge-net/commit/1f084b41944c35b233cbe17accfbc09a56d5eaf0 is released
+edge-nal = { git = "https://github.com/sysgrok/edge-net", rev = "1f084b4" }
+edge-nal-embassy = { git = "https://github.com/sysgrok/edge-net", rev = "1f084b4" }
+edge-http = { git = "https://github.com/sysgrok/edge-net", rev = "1f084b4" }
