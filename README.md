@@ -1,5 +1,10 @@
 # mbedtls-rs
 
+[![CI](https://github.com/esp-rs/mbedtls-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/esp-rs/mbedtls-rs/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/mbedtls-rs.svg)](https://crates.io/crates/mbedtls-rs)
+[![Documentation](https://img.shields.io/badge/docs-esp--rs-brightgreen)](https://esp-rs.github.io/esp-rs/mbedtls-rs/index.html)
+[![Matrix](https://img.shields.io/matrix/esp-rs:matrix.org?label=join%20matrix&color=BEC5C9&logo=matrix)](https://matrix.to/#/#esp-rs:matrix.org)
+
 This repository hosts the [mbedtls-rs](mbedtls-rs), [mbedtls-rs-sys](mbedtls-rs-sys) and [examples](examples) crates.
 
 For more information, consult the respective README of each crate.
