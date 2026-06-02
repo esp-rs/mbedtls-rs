@@ -140,7 +140,11 @@ fn run_cargo(
     wall_clock: bool,
     cargo_args: &[String],
 ) -> Result<(TempDir, PathBuf)> {
-    let mut features: Vec<&str> = vec!["force-generate-bindings"];
+    // Build the prebuilt artifacts with exactly the `prebuilt` algorithm
+    // profile (decoupled from `default`), so the per-target `.a` libs and
+    // bindings correspond to a single, explicit feature set. `mbedtls-rs-sys`'s
+    // build script validates consumer builds against this same profile.
+    let mut features: Vec<&str> = vec!["prebuilt", "force-generate-bindings"];
 
     if use_gcc {
         features.push("use-gcc");
@@ -186,6 +190,9 @@ fn run_cargo(
         .arg("mbedtls-rs-sys")
         .arg("--target")
         .arg(target)
+        // Pin the algorithm profile to `prebuilt` (in `features`); don't let
+        // the crate's `default` profile leak in.
+        .arg("--no-default-features")
         .arg("--features")
         .arg(&features_arg)
         // JSON on stdout for programmatic consumption; human-readable

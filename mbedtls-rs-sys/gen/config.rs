@@ -58,6 +58,53 @@ impl MbedtlsUserConfig {
         self.options.insert(ident.into(), value.into());
         self
     }
+
+    /// The set of effectively-enabled options, as `(ident, value)` pairs.
+    ///
+    /// Options set to `false` (presence-off) are excluded; presence-on options
+    /// map to an empty value, and literal options to their literal text. Two
+    /// configs producing the same set compile MbedTLS identically (given the
+    /// same upstream base config and includes).
+    pub fn effective_defines(&self) -> BTreeMap<&str, &str> {
+        self.options
+            .iter()
+            .filter_map(|(ident, value)| match &value.0 {
+                ValueInner::Presence(false) => None,
+                ValueInner::Presence(true) => Some((ident.as_ref(), "")),
+                ValueInner::Literal(v) => Some((ident.as_ref(), v.as_ref())),
+            })
+            .collect()
+    }
+
+    /// Human-readable delta of `self` relative to `other`'s effective defines:
+    /// `+MBEDTLS_X` for options enabled here but not there, `-MBEDTLS_X` for the
+    /// reverse. Empty string when the two are equivalent. Used to explain why a
+    /// prebuilt artifact was rejected.
+    pub fn effective_delta(&self, other: &Self) -> String {
+        let mine = self.effective_defines();
+        let theirs = other.effective_defines();
+
+        let mut parts = Vec::new();
+        for ident in mine.keys() {
+            if !theirs.contains_key(ident) {
+                parts.push(format!("+MBEDTLS_{ident}"));
+            }
+        }
+        for ident in theirs.keys() {
+            if !mine.contains_key(ident) {
+                parts.push(format!("-MBEDTLS_{ident}"));
+            }
+        }
+        // Same ident, different literal value (e.g. a hook work-area size).
+        for (ident, val) in &mine {
+            if let Some(other_val) = theirs.get(ident) {
+                if val != other_val {
+                    parts.push(format!("~MBEDTLS_{ident}"));
+                }
+            }
+        }
+        parts.join(", ")
+    }
 }
 
 impl fmt::Display for MbedtlsUserConfig {

@@ -1,6 +1,8 @@
 //! Provide extra implementations to the generated bindings
+#[cfg(feature = "x509-parse")]
 use core::ffi::{c_char, c_int, CStr};
 
+#[cfg(feature = "x509-parse")]
 impl core::fmt::Debug for crate::bindings::mbedtls_x509_time {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
@@ -12,6 +14,7 @@ impl core::fmt::Debug for crate::bindings::mbedtls_x509_time {
     }
 }
 
+#[cfg(feature = "x509-parse")]
 impl core::fmt::Debug for crate::bindings::mbedtls_x509_crt {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let mut crt: *const crate::bindings::mbedtls_x509_crt = self;
@@ -49,6 +52,7 @@ impl core::fmt::Debug for crate::bindings::mbedtls_x509_crt {
     }
 }
 
+#[cfg(feature = "pk")]
 impl core::fmt::Debug for crate::bindings::mbedtls_pk_context {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         // TODO: Implement helpful debug

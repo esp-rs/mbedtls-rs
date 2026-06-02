@@ -10,8 +10,6 @@ use core::ptr::NonNull;
 
 use critical_section::Mutex;
 
-pub use mbedtls_rs_sys::define_zeroize;
-
 #[cfg(not(target_os = "espidf"))]
 pub(crate) use crate::sys::{mbedtls_calloc, mbedtls_free};
 use crate::sys::{

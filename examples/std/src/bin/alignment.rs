@@ -3,8 +3,6 @@
 #[path = "../../../common/alignment.rs"]
 mod alignment;
 
-mbedtls_rs::define_zeroize!();
-
 fn main() {
     #[cfg(not(target_os = "espidf"))]
     env_logger::init();

@@ -14,7 +14,20 @@ exclude = ["*.pyc", "mbedtls/framework", "mbedtls/programs", "mbedtls/tests"]
 harness = false
 
 [features]
-default = []
+# The default profile is the full config (`tls`), so behavior is unchanged for
+# existing consumers and the pre-generated bindings/libs apply as-is. Select a
+# narrower bundle (`openthread`/`matter`) or individual `alg-*`/`curve-*`/...
+# features to shrink the compiled-in algorithm set (forces an on-the-fly
+# rebuild). See `gen/features.rs`.
+default = ["tls"]
+
+# The exact algorithm profile the committed per-target prebuilt libraries and
+# bindings are built with (see `xtask`, which builds them with this feature).
+# `gen/features.rs::PREBUILT_FEATURES` must list the same leaves. Keep it equal
+# to `tls`: the prebuilt artifacts are only reused when the active features +
+# hooks match this profile exactly.
+prebuilt = ["tls"]
+
 # Always generate the bindings during build, even if pre-built bindings for the build target are available
 force-generate-bindings = []
 # Use GCC instead of clang
@@ -46,6 +59,169 @@ esp32c6 = ["esp-hal/esp32c6", "crypto-bigint", "time"]
 esp32h2 = ["esp-hal/esp32h2", "crypto-bigint", "time"]
 esp32s2 = ["esp-hal/esp32s2", "crypto-bigint", "time"]
 esp32s3 = ["esp-hal/esp32s3", "crypto-bigint", "time"]
+
+# ---------------------------------------------------------------------------
+# Features controlling what MbedTLS algorithms gets compiled in.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Consumer bundles (flat: each lists every leaf it needs).
+# ---------------------------------------------------------------------------
+
+# OpenThread (Thread 1.x MTD, as built by `openthread-sys`): AES-CCM/CMAC,
+# SHA-256, ECDSA over P-256, PK (DER), CTR-DRBG, entropy. No TLS/X.509/ECDH.
+openthread = [
+    "alg-aes", "alg-ccm", "alg-cmac", "alg-sha256",
+    "alg-ecp", "curve-secp256r1", "alg-ecdsa",
+    "pk", "drbg-ctr", "entropy",
+    # OpenThread's C unconditionally references `mbedtls_debug_set_threshold`.
+    "tls-debug",
+]
+
+# rs-matter mbedtls backend: OpenThread's set plus SHA-1, PBKDF2 (PKCS5),
+# HKDF, GCM, ECDH, and X.509 CSR generation.
+matter = [
+    "alg-aes", "alg-ccm", "alg-cmac", "alg-gcm", "alg-sha256", "alg-sha1",
+    "alg-ecp", "curve-secp256r1", "alg-ecdh", "alg-ecdsa",
+    "alg-hkdf", "alg-pkcs5", "pk", "x509-write",
+    "drbg-ctr", "entropy",
+]
+
+# Full TLS 1.2/1.3 client+server with X.509 chain verification, as needed by
+# the high-level `mbedtls-rs` crate (`MBEDTLS_SSL_PRESET_DEFAULT`). Reproduces
+# the historical full config; this is the `default`.
+tls = [
+    # hashes
+    "alg-sha256", "alg-sha512", "alg-sha1", "alg-md5", "alg-ripemd160",
+    # ciphers + modes
+    "alg-aes", "alg-des", "alg-aria", "alg-camellia", "alg-chacha20",
+    "cipher-mode-cbc", "cipher-mode-cfb", "cipher-mode-ofb", "cipher-mode-ctr",
+    "cipher-mode-xts",
+    # aead / mac
+    "alg-gcm", "alg-ccm", "alg-cmac", "alg-chachapoly", "alg-nist-kw",
+    # public-key / ec
+    "alg-rsa", "alg-rsa-pss", "alg-dhm", "alg-ecp", "alg-ecdh", "alg-ecdsa",
+    "alg-ecjpake", "pk",
+    # curves
+    "curve-secp192r1", "curve-secp224r1", "curve-secp256r1", "curve-secp384r1",
+    "curve-secp521r1", "curve-secp192k1", "curve-secp224k1", "curve-secp256k1",
+    "curve-bp256r1", "curve-bp384r1", "curve-bp512r1", "curve-curve25519",
+    "curve-curve448",
+    # kdf / drbg / entropy
+    "alg-hkdf", "alg-pkcs5", "alg-pkcs12", "drbg-ctr", "drbg-hmac", "entropy",
+    # encoding / x509
+    "base64", "pem-parse", "pem-write", "pkcs7", "x509-parse", "x509-write",
+    # tls
+    "tls-core", "tls-client", "tls-server", "tls-cache", "tls-ticket",
+    "tls-debug", "tls-proto-tls12", "tls-proto-tls13", "tls-proto-dtls",
+    # key exchanges
+    "kex-psk", "kex-ecdhe-ecdsa", "kex-ecdhe-rsa", "kex-ecdh-ecdsa",
+    "kex-ecdh-rsa", "kex-rsa", "kex-rsa-psk", "kex-dhe-rsa", "kex-dhe-psk",
+    "kex-ecdhe-psk",
+    # NOTE: kex-ecjpake is intentionally NOT in the TLS bundle — the historical
+    # full config does not enable J-PAKE TLS ciphersuites. It remains available
+    # as a leaf feature and is used by the `openthread` bundle.
+]
+
+# ---------------------------------------------------------------------------
+# Leaf features: one per independently-linkable MbedTLS unit. Each just flags
+# itself; `gen/features.rs` maps `CARGO_FEATURE_<NAME>` to the `MBEDTLS_*`
+# defines it enables (folding sub-options that share object code).
+# ---------------------------------------------------------------------------
+
+# Hashes
+alg-sha256 = []        # SHA-256 (+ SHA-224, shared compress)
+alg-sha512 = []        # SHA-512 (+ SHA-384, shared compress)
+alg-sha1 = []
+alg-md5 = []
+alg-ripemd160 = []
+# Block ciphers + modes
+alg-aes = []
+alg-des = []           # DES / 3DES
+alg-aria = []
+alg-camellia = []
+alg-chacha20 = []
+cipher-mode-cbc = []
+cipher-mode-cfb = []
+cipher-mode-ofb = []
+cipher-mode-ctr = []
+cipher-mode-xts = []
+# AEAD / MAC
+alg-gcm = []
+alg-ccm = []
+alg-cmac = []
+alg-chachapoly = []    # ChaCha20-Poly1305 (+ Poly1305)
+alg-nist-kw = []
+# Public-key / EC
+alg-rsa = []           # RSA (+ PKCS#1 v1.5)
+alg-rsa-pss = []       # RSASSA-PSS / OAEP (PKCS#1 v2.1)
+alg-dhm = []           # finite-field Diffie-Hellman
+alg-ecp = []           # elliptic-curve core (curves selected separately)
+alg-ecdh = []
+alg-ecdsa = []
+alg-ecjpake = []
+pk = []                # PK abstraction (parse + write)
+# Curves
+curve-secp192r1 = []
+curve-secp224r1 = []
+curve-secp256r1 = []
+curve-secp384r1 = []
+curve-secp521r1 = []
+curve-secp192k1 = []
+curve-secp224k1 = []
+curve-secp256k1 = []
+curve-bp256r1 = []
+curve-bp384r1 = []
+curve-bp512r1 = []
+curve-curve25519 = []
+curve-curve448 = []
+# KDF / DRBG / entropy
+alg-hkdf = []
+alg-pkcs5 = []         # PBKDF2
+alg-pkcs12 = []
+drbg-ctr = []
+drbg-hmac = []
+entropy = []
+# Encoding / X.509
+base64 = []
+pem-parse = []
+pem-write = []
+pkcs7 = []
+x509-parse = []        # X.509 cert/CRL/CSR parsing + verification
+x509-write = []        # X.509 cert/CSR generation
+# TLS
+tls-engine = []        # bare SSL/TLS+DTLS engine, no X.509-coupled extensions
+tls-core = ["tls-engine"] # engine + cert-coupled extensions (SNI, tickets, ...)
+tls-client = []
+tls-server = []
+tls-cache = []
+tls-ticket = []
+tls-debug = []
+tls-proto-tls12 = []
+tls-proto-tls13 = []
+tls-proto-dtls = []
+# Key exchanges
+kex-psk = []
+kex-ecdhe-ecdsa = []
+kex-ecdhe-rsa = []
+kex-ecdh-ecdsa = []
+kex-ecdh-rsa = []
+kex-rsa = []
+kex-rsa-psk = []
+kex-dhe-rsa = []
+kex-dhe-psk = []
+kex-ecdhe-psk = []
+kex-ecjpake = []
+
+# ---------------------------------------------------------------------------
+# Platform alternatives
+# ---------------------------------------------------------------------------
+# Replace MbedTLS's built-in `mbedtls_platform_zeroize` with a user-supplied
+# one (define `MBEDTLS_PLATFORM_ZEROIZE_ALT` and provide the symbol via
+# `define_zeroize!`). OFF by default: MbedTLS's own zeroize is portable and
+# already guards against dead-store elimination, so enable this only to plug in
+# a custom or hardware-backed implementation.
+platform-zeroize-alt = []
 
 [dependencies]
 defmt = { version = "1", optional = true }

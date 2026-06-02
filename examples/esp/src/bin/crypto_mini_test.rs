@@ -27,8 +27,6 @@ const RECLAIMED_RAM: usize =
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
-mbedtls_rs::define_zeroize!();
-
 #[esp_rtos::main]
 async fn main(_s: Spawner) {
     esp_println::logger::init_logger(log::LevelFilter::Info);
