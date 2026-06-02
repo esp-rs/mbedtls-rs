@@ -42,7 +42,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build
+    name: Build for host
     runs-on: ubuntu-latest
     permissions: read-all
 
@@ -84,7 +84,7 @@ jobs:
         run: cd examples/std; cargo build
 
   build-mbedtls:
-    name: Build MbedTLS
+    name: Pre-build MbedTLS native libs
     runs-on: ubuntu-latest
     permissions: read-all
     needs: build
@@ -102,6 +102,21 @@ jobs:
           target: x86_64-unknown-linux-gnu
           toolchain: nightly
           components: rust-src,rustfmt
+
+      - name: Setup | Rust no-std Riscv32imc target
+        run: rustup +stable target add riscv32imc-unknown-none-elf
+
+      - name: Setup | Rust no-std Riscv32imac target
+        run: rustup +stable target add riscv32imac-unknown-none-elf
+
+      - name: Setup | Rust no-std Riscv32imafc target
+        run: rustup +stable target add riscv32imafc-unknown-none-elf
+
+      - name: Setup | Rust no-std Thumbv6 target
+        run: rustup +stable target add thumbv6m-none-eabi
+
+      - name: Setup | Rust no-std Thumbv7 target
+        run: rustup +stable target add thumbv7em-none-eabi
 
       # TODO: Double-check and uncomment
       # - uses: Swatinem/rust-cache@v2
@@ -122,6 +137,15 @@ jobs:
         run: |
           export HOST_TARGET=$(rustup show | grep "Default host" | sed -e 's/.* //')
           echo "HOST_TARGET=$HOST_TARGET" >> $GITHUB_ENV
+
+      - name: Build MbedTLS libraries and bindings
+        if: |
+          steps.detect-changes.outputs.libs == 'true' ||
+          contains(github.event.pull_request.labels.*.name, 'rebuild-libs')
+        run: |
+          rm -rf mbedtls-rs-sys/libs/*
+          cargo +stable xtask gen thumbv6m-none-eabi
+          cargo +stable xtask gen thumbv7em-none-eabi
 
       - name: Install espup
         run: |
@@ -152,15 +176,14 @@ jobs:
 #            contains(github.event.pull_request.labels.*.name, 'rebuild-libs')
 #            }}
 
-      - name: Build MbedTLS libraries and bindings
+      - name: Build MbedTLS libraries and bindings (Xtensa and RISC-V)
         if: |
           steps.detect-changes.outputs.libs == 'true' ||
           contains(github.event.pull_request.labels.*.name, 'rebuild-libs')
         run: |
-          rm -rf mbedtls-rs-sys/libs/*
-          cargo +stable xtask gen xtensa-esp32-none-elf
-          cargo +stable xtask gen xtensa-esp32s2-none-elf
-          cargo +stable xtask gen xtensa-esp32s3-none-elf
+          cargo +esp xtask gen xtensa-esp32-none-elf -- -Zbuild-std=core,alloc,panic_abort
+          cargo +esp xtask gen xtensa-esp32s2-none-elf -- -Zbuild-std=core,alloc,panic_abort
+          cargo +esp xtask gen xtensa-esp32s3-none-elf -- -Zbuild-std=core,alloc,panic_abort
           cargo +stable xtask gen riscv32imc-unknown-none-elf
           cargo +stable xtask gen riscv32imac-unknown-none-elf
 

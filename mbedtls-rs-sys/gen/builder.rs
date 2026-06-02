@@ -615,9 +615,18 @@ impl CMakeConfigurer {
                 // lib  ->  <prefix>
                 {
                     if let Some(triple) = self.derive_gcc_target_triple() {
-                        let candidate = prefix.join(triple);
-                        if candidate.join("include").join("stdio.h").exists() {
-                            return Some(candidate);
+                        // Two common layouts:
+                        //   - crosstool-NG / PlatformIO (ESP toolchains):
+                        //       `<prefix>/<triple>/include/`
+                        //   - Debian / Ubuntu native packaging of
+                        //     `gcc-arm-none-eabi`:
+                        //       `<prefix>/lib/<triple>/include/`
+                        // Probe each in turn, accept the first whose
+                        // `include/stdio.h` exists.
+                        for candidate in [prefix.join(triple), prefix.join("lib").join(triple)] {
+                            if candidate.join("include").join("stdio.h").exists() {
+                                return Some(candidate);
+                            }
                         }
                     }
                 }
@@ -706,6 +715,16 @@ impl CMakeConfigurer {
             {
                 Some("riscv32-esp-elf")
             }
+            // ARM bare-metal Rust targets all map to the same `arm-none-eabi`
+            // GCC cross-toolchain (Cortex-M architecture is selected via
+            // `-mcpu` / `-march` flags, not via separate compilers).
+            "thumbv6m-none-eabi"
+            | "thumbv7m-none-eabi"
+            | "thumbv7em-none-eabi"
+            | "thumbv7em-none-eabihf"
+            | "thumbv8m.base-none-eabi"
+            | "thumbv8m.main-none-eabi"
+            | "thumbv8m.main-none-eabihf" => Some("arm-none-eabi"),
             _ => None,
         }
     }
