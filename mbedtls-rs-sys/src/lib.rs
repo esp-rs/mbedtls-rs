@@ -96,3 +96,19 @@ mod bindings {
     #[cfg(target_os = "espidf")]
     pub use esp_idf_sys::*;
 }
+
+/// This macro defines a default `mbedtls_platform_zeroize` function which is required by MbedTLS.
+///
+/// If you need a custom implementation, define your own `mbedtls_platform_zeroize`
+#[macro_export]
+macro_rules! define_zeroize {
+    () => {
+        #[cfg(not(target_os = "espidf"))]
+        #[no_mangle]
+        unsafe extern "C" fn mbedtls_platform_zeroize(dst: *mut core::ffi::c_uchar, len: u32) {
+            for i in 0..len as isize {
+                dst.offset(i).write_volatile(0);
+            }
+        }
+    };
+}

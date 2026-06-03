@@ -38,6 +38,8 @@ const RECLAIMED_RAM: usize =
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
+mbedtls_rs::define_zeroize!();
+
 static RNG: Mutex<RefCell<Option<esp_hal::rng::Rng>>> = Mutex::new(RefCell::new(None));
 
 #[esp_rtos::main]
