@@ -394,10 +394,10 @@ pub const FEATURE_DEFINES: &[(&str, &[&str])] = &[
     ("KEX_ECJPAKE", &["KEY_EXCHANGE_ECJPAKE_ENABLED"]),
     // ---- Platform alternatives ----
     // Opt-in: replace MbedTLS's own `mbedtls_platform_zeroize` with a
-    // user-supplied one (see `crate::define_zeroize!`). Off by default — MbedTLS
-    // ships a portable, compiler-barrier-protected zeroize that already resists
-    // dead-store elimination, so most users want the default. Enable this only
-    // to provide a custom/HW-backed implementation.
+    // user-supplied one.
+    // Off by default — MbedTLS ships a portable, compiler-barrier-protected
+    // zeroize that already resists dead-store elimination, so most users want
+    // the default. Enable this only to provide a custom implementation.
     ("PLATFORM_ZEROIZE_ALT", &["PLATFORM_ZEROIZE_ALT"]),
 ];
 

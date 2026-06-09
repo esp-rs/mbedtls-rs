@@ -217,10 +217,9 @@ kex-ecjpake = []
 # Platform alternatives
 # ---------------------------------------------------------------------------
 # Replace MbedTLS's built-in `mbedtls_platform_zeroize` with a user-supplied
-# one (define `MBEDTLS_PLATFORM_ZEROIZE_ALT` and provide the symbol via
-# `define_zeroize!`). OFF by default: MbedTLS's own zeroize is portable and
-# already guards against dead-store elimination, so enable this only to plug in
-# a custom or hardware-backed implementation.
+# one (define `MBEDTLS_PLATFORM_ZEROIZE_ALT` and provide the symbol).
+# OFF by default: MbedTLS's own zeroize is portable and already guards against
+# dead-store elimination, so enable this only to plug in a custom implementation.
 platform-zeroize-alt = []
 
 [dependencies]
