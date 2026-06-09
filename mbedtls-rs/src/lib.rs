@@ -10,6 +10,8 @@ use core::ptr::NonNull;
 
 use critical_section::Mutex;
 
+pub use mbedtls_rs_sys::define_zeroize;
+
 #[cfg(not(target_os = "espidf"))]
 pub(crate) use crate::sys::{mbedtls_calloc, mbedtls_free};
 use crate::sys::{
@@ -441,14 +443,6 @@ unsafe extern "C" fn mbedtls_psa_external_get_random(
 ) -> c_int {
     *output_len = out_size;
     mbedtls_rng(core::ptr::null_mut(), output, out_size)
-}
-
-#[cfg(not(target_os = "espidf"))]
-#[no_mangle]
-unsafe extern "C" fn mbedtls_platform_zeroize(dst: *mut c_uchar, len: u32) {
-    for i in 0..len as isize {
-        dst.offset(i).write_volatile(0);
-    }
 }
 
 #[cfg(target_os = "espidf")]

@@ -6,6 +6,8 @@ use mbedtls_rs::sys::self_test::MbedtlsSelfTest;
 
 use log::{error, info};
 
+mbedtls_rs::define_zeroize!();
+
 fn main() {
     #[cfg(not(target_os = "espidf"))]
     env_logger::init();
