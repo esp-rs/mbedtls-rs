@@ -71,8 +71,6 @@ pub const RECLAIMED_RAM: usize =
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
-mbedtls_rs::define_zeroize!();
-
 #[cfg(not(feature = "esp32c5"))]
 const WIFI_SSID: &str = env!("WIFI_SSID");
 #[cfg(not(feature = "esp32c5"))]

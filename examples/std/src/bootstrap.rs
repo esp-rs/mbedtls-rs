@@ -1,5 +1,3 @@
-mbedtls_rs::define_zeroize!();
-
 #[cfg(not(target_os = "espidf"))]
 pub fn bootstrap() {
     env_logger::init();

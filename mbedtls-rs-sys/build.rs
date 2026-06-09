@@ -47,9 +47,31 @@ fn main() -> Result<()> {
         }
     }
 
-    let hooks_changed = hooks != builder::DEFAULT_HOOKS;
+    // Desync guard: when the `prebuilt` profile itself is active (i.e. `xtask`
+    // generating the committed artifacts, with default hooks), the active
+    // config MUST equal the prebuilt reference. If it doesn't, the leaf list in
+    // `Cargo.toml`'s `tls`/`prebuilt` bundle and `features::PREBUILT_FEATURES`
+    // have drifted apart — fail loudly rather than silently shipping a `.a`
+    // whose fingerprint no longer matches its own validity check.
+    if env::var_os("CARGO_FEATURE_PREBUILT").is_some() && hooks == builder::DEFAULT_HOOKS {
+        if let Err(delta) = builder::MbedtlsBuilder::prebuilt_validity(hooks) {
+            panic!(
+                "BUG: `prebuilt` profile active but the generated config does not match \
+                 `features::PREBUILT_FEATURES`. The `tls`/`prebuilt` bundle in Cargo.toml \
+                 and PREBUILT_FEATURES have drifted. Delta: {delta}"
+            );
+        }
+    }
 
-    let dirs = if pregen_bindings && pregen_bindings_rs_file.exists() && !hooks_changed {
+    // The committed prebuilt libraries and bindings are produced with the
+    // `prebuilt` profile (= `tls`) and `DEFAULT_HOOKS`. They are valid for this
+    // build only if the *active* features + hooks generate a byte-for-byte
+    // equivalent MbedTLS config. Any deviation — a narrower/wider algorithm
+    // profile, an extra feature (e.g. `kex-ecjpake` on top of `tls`), or a hook
+    // change — rejects them and forces an on-the-fly rebuild.
+    let prebuilt_validity = builder::MbedtlsBuilder::prebuilt_validity(hooks);
+
+    let dirs = if pregen_bindings && pregen_bindings_rs_file.exists() && prebuilt_validity.is_ok() {
         // Use the pre-generated bindings.
         //
         // Order matters here and is deliberate. Both `<pregen_libs_dir>/include`
@@ -76,8 +98,8 @@ fn main() -> Result<()> {
         if pregen_bindings_rs_file.exists() {
             if !pregen_bindings {
                 println!("cargo::warning=Forcing on-the-fly build for target {target} as bindings are not available.");
-            } else {
-                println!("cargo::warning=Forcing on-the-fly build for {target} because hooks don't match default. Enabled hooks: {hooks:?}.");
+            } else if let Err(delta) = &prebuilt_validity {
+                println!("cargo::warning=Forcing on-the-fly build for {target}: the selected features/hooks differ from the prebuilt config by: {delta}.");
             }
         }
 

@@ -13,6 +13,8 @@ pub const DEFAULT_HOOKS: EnumSet<Hook> =
     enum_set!(Hook::Sha1 | Hook::Sha256 | Hook::Sha512 | Hook::ExpMod);
 
 mod config;
+#[path = "features.rs"]
+pub mod features;
 
 /// What hooks to install in MbedTLS
 #[derive(EnumSetType, Debug)]
@@ -294,34 +296,55 @@ impl MbedtlsBuilder {
     pub fn generate_user_config(&self) -> MbedtlsUserConfig {
         let mut config = MbedtlsUserConfig::new();
 
-        config
-            .set("DEPRECATED_REMOVED", true)
-            .set("HAVE_TIME", false)
-            .set("HAVE_TIME_DATE", false)
-            .set("PLATFORM_MEMORY", true)
-            // We want to provide our own Rust-backed zeroization function.
-            .set("PLATFORM_ZEROIZE_ALT", true)
-            .set("AES_ROM_TABLES", true)
-            .set("PK_PARSE_EC_COMPRESSED", false)
-            .set("GENPRIME", false)
-            .set("FS_IO", false)
-            .set("NO_PLATFORM_ENTROPY", true)
-            .set("PSA_CRYPTO_EXTERNAL_RNG", true)
-            .set("PSA_KEY_STORE_DYNAMIC", false)
-            .set("SSL_KEYING_MATERIAL_EXPORT", false)
-            .set("AESNI_C", false)
-            .set("AESCE_C", false)
-            .set("NET_C", false)
-            .set("PSA_CRYPTO_STORAGE_C", false)
-            .set("PSA_ITS_FILE_C", false)
-            .set("SHA3_C", false)
-            .set("TIMING_C", false);
+        // Additive, feature-driven algorithm/module selection: `#undef` the
+        // whole optional universe, then re-`#define` per enabled cargo feature.
+        // See `features.rs` for the rationale (runtime cipher/digest dispatch
+        // tables defeat `--gc-sections`, so unused algos must be compiled out).
+        features::apply_features(&mut config);
 
         self.hooks
             .iter()
             .for_each(|hook| hook.apply_to_config(&mut config));
 
         config
+    }
+
+    /// The config the committed prebuilt libraries/bindings were produced with:
+    /// the [`features::PREBUILT_FEATURES`] algorithm set plus [`DEFAULT_HOOKS`].
+    fn prebuilt_config() -> MbedtlsUserConfig {
+        let mut config = features::prebuilt_features_config();
+        DEFAULT_HOOKS
+            .iter()
+            .for_each(|hook| hook.apply_to_config(&mut config));
+        config
+    }
+
+    /// Decide whether the committed prebuilt libraries and bindings are valid
+    /// for the given active features (read from `CARGO_FEATURE_*`) and `hooks`.
+    ///
+    /// Returns `Ok(())` if the active config is byte-for-byte equivalent to the
+    /// prebuilt config (so the `.a` and bindings can be used as-is), or
+    /// `Err(delta)` describing how they differ (so the caller can rebuild on the
+    /// fly and explain why). This is exact in both directions: any added option
+    /// (e.g. `kex-ecjpake` on top of `tls`), any removed option (a trimmed
+    /// profile), or any hook change rejects the prebuilt artifacts.
+    ///
+    /// Takes `hooks` directly so the build script can call it before
+    /// constructing a full [`MbedtlsBuilder`].
+    pub fn prebuilt_validity(hooks: EnumSet<Hook>) -> Result<(), String> {
+        let mut active = MbedtlsUserConfig::new();
+        features::apply_features(&mut active);
+        hooks
+            .iter()
+            .for_each(|hook| hook.apply_to_config(&mut active));
+
+        let prebuilt = Self::prebuilt_config();
+        let delta = active.effective_delta(&prebuilt);
+        if delta.is_empty() {
+            Ok(())
+        } else {
+            Err(delta)
+        }
     }
 
     /// Compile MbedTLS.
