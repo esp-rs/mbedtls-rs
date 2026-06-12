@@ -12,17 +12,17 @@ readme = "README.md"
 harness = false
 
 [features]
-# `profile-tls` reproduces the historical full algorithm surface and is ON by
+# The `tls` bundle reproduces the historical full algorithm surface and is ON by
 # default, so existing consumers are unchanged. Consumers wanting a smaller build
 # set `default-features = false` and select a curated bundle (`tls`/`openthread`/
-# `matter`) or any individual `alg-*`/`curve-*`/`cipher-mode-*`/`kex-*`/… leaf below.
-default = ["edge-nal", "profile-tls"]
+# `matter`) or any individual `alg-*`/`curve-*`/`cipher-mode-*`/`kex-*`/... leaf below.
+# Even with `default-features = false` and no bundle, a minimal non-negotiable floor
+# (see the `mbedtls-rs-sys` dependency below) keeps this crate compiling.
+default = ["edge-nal", "tls"]
 defmt = ["dep:defmt", "mbedtls-rs-sys/defmt"]
 log = ["dep:log", "mbedtls-rs-sys/log"]
 
 # ─── Algorithm profile selection (granular passthrough to mbedtls-rs-sys) ───
-profile-tls = ["mbedtls-rs-sys/tls"]
-
 # Curated bundles
 openthread = ["mbedtls-rs-sys/openthread"]
 matter = ["mbedtls-rs-sys/matter"]
@@ -137,11 +137,21 @@ esp32s3 = ["mbedtls-rs-sys/esp32s3"]
 embassy-time = ["mbedtls-rs-sys/embassy-time"]
 
 [dependencies]
-# Algorithm surface is selected by the consumer via this crate's profile/leaf
-# features (default = `profile-tls` = full historical surface). No profile is
-# hard-wired here, so `default-features = false` + leaf selection yields a
-# minimal build. See the `[features]` section above.
-mbedtls-rs-sys = { path = "../mbedtls-rs-sys", default-features = false }
+# Algorithm surface is selected by the consumer via this crate's bundle/leaf
+# features (default = `tls` = full historical surface). The fixed feature list
+# below is the minimal non-negotiable floor that keeps THIS crate compiling even
+# under `--no-default-features` (a coherent minimal EC TLS 1.2/1.3 stack: the SSL
+# engine, X.509 + PK + PEM parse, ECDHE-ECDSA over P-256, AES-GCM, SHA-256, HKDF,
+# CTR-DRBG + entropy). Consumer-selected bundles/leaves are unioned on top.
+mbedtls-rs-sys = { path = "../mbedtls-rs-sys", default-features = false, features = [
+    "tls-engine", "tls-core", "tls-client", "tls-server",
+    "tls-proto-tls12", "tls-proto-tls13",
+    "kex-ecdhe-ecdsa",
+    "alg-sha256", "alg-aes", "alg-gcm", "alg-hkdf",
+    "alg-ecp", "alg-ecdh", "alg-ecdsa", "pk",
+    "curve-secp256r1",
+    "drbg-ctr", "entropy", "base64", "pem-parse", "x509-parse",
+] }
 defmt = { version = "1", optional = true }
 log = { version = "0.4", default-features = false, optional = true }
 embedded-io = { version = "0.7" }
