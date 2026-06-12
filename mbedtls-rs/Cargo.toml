@@ -12,9 +12,98 @@ readme = "README.md"
 harness = false
 
 [features]
-default = ["edge-nal"]
+# `profile-tls` reproduces the historical full algorithm surface and is ON by
+# default, so existing consumers are unchanged. Consumers wanting a smaller build
+# set `default-features = false` and select a curated bundle (`tls`/`openthread`/
+# `matter`) or any individual `alg-*`/`curve-*`/`cipher-mode-*`/`kex-*`/… leaf below.
+default = ["edge-nal", "profile-tls"]
 defmt = ["dep:defmt", "mbedtls-rs-sys/defmt"]
 log = ["dep:log", "mbedtls-rs-sys/log"]
+
+# ─── Algorithm profile selection (granular passthrough to mbedtls-rs-sys) ───
+profile-tls = ["mbedtls-rs-sys/tls"]
+
+# Curated bundles
+openthread = ["mbedtls-rs-sys/openthread"]
+matter = ["mbedtls-rs-sys/matter"]
+tls = ["mbedtls-rs-sys/tls"]
+
+# Individual algorithm leaves (one per independently-linkable MbedTLS unit)
+alg-sha256 = ["mbedtls-rs-sys/alg-sha256"]
+alg-sha512 = ["mbedtls-rs-sys/alg-sha512"]
+alg-sha1 = ["mbedtls-rs-sys/alg-sha1"]
+alg-md5 = ["mbedtls-rs-sys/alg-md5"]
+alg-ripemd160 = ["mbedtls-rs-sys/alg-ripemd160"]
+alg-aes = ["mbedtls-rs-sys/alg-aes"]
+alg-des = ["mbedtls-rs-sys/alg-des"]
+alg-aria = ["mbedtls-rs-sys/alg-aria"]
+alg-camellia = ["mbedtls-rs-sys/alg-camellia"]
+alg-chacha20 = ["mbedtls-rs-sys/alg-chacha20"]
+cipher-mode-cbc = ["mbedtls-rs-sys/cipher-mode-cbc"]
+cipher-mode-cfb = ["mbedtls-rs-sys/cipher-mode-cfb"]
+cipher-mode-ofb = ["mbedtls-rs-sys/cipher-mode-ofb"]
+cipher-mode-ctr = ["mbedtls-rs-sys/cipher-mode-ctr"]
+cipher-mode-xts = ["mbedtls-rs-sys/cipher-mode-xts"]
+alg-gcm = ["mbedtls-rs-sys/alg-gcm"]
+alg-ccm = ["mbedtls-rs-sys/alg-ccm"]
+alg-cmac = ["mbedtls-rs-sys/alg-cmac"]
+alg-chachapoly = ["mbedtls-rs-sys/alg-chachapoly"]
+alg-nist-kw = ["mbedtls-rs-sys/alg-nist-kw"]
+alg-rsa = ["mbedtls-rs-sys/alg-rsa"]
+alg-rsa-pss = ["mbedtls-rs-sys/alg-rsa-pss"]
+alg-dhm = ["mbedtls-rs-sys/alg-dhm"]
+alg-ecp = ["mbedtls-rs-sys/alg-ecp"]
+alg-ecdh = ["mbedtls-rs-sys/alg-ecdh"]
+alg-ecdsa = ["mbedtls-rs-sys/alg-ecdsa"]
+alg-ecjpake = ["mbedtls-rs-sys/alg-ecjpake"]
+pk = ["mbedtls-rs-sys/pk"]
+curve-secp192r1 = ["mbedtls-rs-sys/curve-secp192r1"]
+curve-secp224r1 = ["mbedtls-rs-sys/curve-secp224r1"]
+curve-secp256r1 = ["mbedtls-rs-sys/curve-secp256r1"]
+curve-secp384r1 = ["mbedtls-rs-sys/curve-secp384r1"]
+curve-secp521r1 = ["mbedtls-rs-sys/curve-secp521r1"]
+curve-secp192k1 = ["mbedtls-rs-sys/curve-secp192k1"]
+curve-secp224k1 = ["mbedtls-rs-sys/curve-secp224k1"]
+curve-secp256k1 = ["mbedtls-rs-sys/curve-secp256k1"]
+curve-bp256r1 = ["mbedtls-rs-sys/curve-bp256r1"]
+curve-bp384r1 = ["mbedtls-rs-sys/curve-bp384r1"]
+curve-bp512r1 = ["mbedtls-rs-sys/curve-bp512r1"]
+curve-curve25519 = ["mbedtls-rs-sys/curve-curve25519"]
+curve-curve448 = ["mbedtls-rs-sys/curve-curve448"]
+alg-hkdf = ["mbedtls-rs-sys/alg-hkdf"]
+alg-pkcs5 = ["mbedtls-rs-sys/alg-pkcs5"]
+alg-pkcs12 = ["mbedtls-rs-sys/alg-pkcs12"]
+drbg-ctr = ["mbedtls-rs-sys/drbg-ctr"]
+drbg-hmac = ["mbedtls-rs-sys/drbg-hmac"]
+entropy = ["mbedtls-rs-sys/entropy"]
+base64 = ["mbedtls-rs-sys/base64"]
+pem-parse = ["mbedtls-rs-sys/pem-parse"]
+pem-write = ["mbedtls-rs-sys/pem-write"]
+pkcs7 = ["mbedtls-rs-sys/pkcs7"]
+x509-parse = ["mbedtls-rs-sys/x509-parse"]
+x509-write = ["mbedtls-rs-sys/x509-write"]
+tls-engine = ["mbedtls-rs-sys/tls-engine"]
+tls-core = ["mbedtls-rs-sys/tls-core"]
+tls-client = ["mbedtls-rs-sys/tls-client"]
+tls-server = ["mbedtls-rs-sys/tls-server"]
+tls-cache = ["mbedtls-rs-sys/tls-cache"]
+tls-ticket = ["mbedtls-rs-sys/tls-ticket"]
+tls-debug = ["mbedtls-rs-sys/tls-debug"]
+tls-proto-tls12 = ["mbedtls-rs-sys/tls-proto-tls12"]
+tls-proto-tls13 = ["mbedtls-rs-sys/tls-proto-tls13"]
+tls-proto-dtls = ["mbedtls-rs-sys/tls-proto-dtls"]
+kex-psk = ["mbedtls-rs-sys/kex-psk"]
+kex-ecdhe-ecdsa = ["mbedtls-rs-sys/kex-ecdhe-ecdsa"]
+kex-ecdhe-rsa = ["mbedtls-rs-sys/kex-ecdhe-rsa"]
+kex-ecdh-ecdsa = ["mbedtls-rs-sys/kex-ecdh-ecdsa"]
+kex-ecdh-rsa = ["mbedtls-rs-sys/kex-ecdh-rsa"]
+kex-rsa = ["mbedtls-rs-sys/kex-rsa"]
+kex-rsa-psk = ["mbedtls-rs-sys/kex-rsa-psk"]
+kex-dhe-rsa = ["mbedtls-rs-sys/kex-dhe-rsa"]
+kex-dhe-psk = ["mbedtls-rs-sys/kex-dhe-psk"]
+kex-ecdhe-psk = ["mbedtls-rs-sys/kex-ecdhe-psk"]
+kex-ecjpake = ["mbedtls-rs-sys/kex-ecjpake"]
+platform-zeroize-alt = ["mbedtls-rs-sys/platform-zeroize-alt"]
 
 # Re-expose mbedtls-rs-sys features
 use-gcc = ["mbedtls-rs-sys/use-gcc"]
@@ -48,11 +137,11 @@ esp32s3 = ["mbedtls-rs-sys/esp32s3"]
 embassy-time = ["mbedtls-rs-sys/embassy-time"]
 
 [dependencies]
-# `mbedtls-rs` provides TLS streams, which need the full algorithm surface
-# (`MBEDTLS_SSL_PRESET_DEFAULT`): TLS 1.2/1.3 ciphersuites, RSA/ECDSA, the
-# default X.509 verification profile, etc. So the `tls` profile of
-# `mbedtls-rs-sys` is always enabled.
-mbedtls-rs-sys = { path = "../mbedtls-rs-sys", default-features = false, features = ["tls"] }
+# Algorithm surface is selected by the consumer via this crate's profile/leaf
+# features (default = `profile-tls` = full historical surface). No profile is
+# hard-wired here, so `default-features = false` + leaf selection yields a
+# minimal build. See the `[features]` section above.
+mbedtls-rs-sys = { path = "../mbedtls-rs-sys", default-features = false }
 defmt = { version = "1", optional = true }
 log = { version = "0.4", default-features = false, optional = true }
 embedded-io = { version = "0.7" }
