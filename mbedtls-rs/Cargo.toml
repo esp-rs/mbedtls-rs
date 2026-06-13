@@ -24,9 +24,11 @@ log = ["dep:log", "mbedtls-rs-sys/log"]
 
 # ─── Algorithm profile selection (granular passthrough to mbedtls-rs-sys) ───
 # Curated bundles
-openthread = ["mbedtls-rs-sys/openthread"]
+# `tls`/`openthread` compile in MBEDTLS_DEBUG_C, so they also enable local
+# `tls-debug` (which gates `Tls::set_debug`); `matter` must NOT (no DEBUG_C).
+openthread = ["mbedtls-rs-sys/openthread", "tls-debug"]
 matter = ["mbedtls-rs-sys/matter"]
-tls = ["mbedtls-rs-sys/tls"]
+tls = ["mbedtls-rs-sys/tls", "tls-debug"]
 
 # Individual algorithm leaves (one per independently-linkable MbedTLS unit)
 alg-sha256 = ["mbedtls-rs-sys/alg-sha256"]

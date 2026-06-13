@@ -88,10 +88,17 @@ impl<'d> Tls<'d> {
         });
     }
 
-    /// Set the MbedTLS debug level (0 - 5)
+    /// Set the MbedTLS debug level (0 - 5).
+    ///
+    /// No-op unless the `tls-debug` feature is enabled (the `tls`/`openthread`
+    /// bundles enable it) so `MBEDTLS_DEBUG_C` is compiled in; also a no-op on
+    /// ESP-IDF.
     #[allow(unused)]
     pub fn set_debug(&mut self, level: u32) {
-        #[cfg(not(target_os = "espidf"))]
+        #[cfg(all(not(target_os = "espidf"), feature = "tls-debug"))]
+        // SAFETY: this block is compiled only when `tls-debug` is enabled, which turns on
+        // `mbedtls-rs-sys/tls-debug` (MBEDTLS_DEBUG_C) so `mbedtls_debug_set_threshold` is
+        // defined and linked; the call passes one `c_int` by value (no pointers/aliasing).
         unsafe {
             use crate::sys::mbedtls_debug_set_threshold;
 
