@@ -540,6 +540,52 @@ pub fn apply_features(config: &mut MbedtlsUserConfig) {
     build_config(config, |feature| {
         std::env::var_os(format!("CARGO_FEATURE_{feature}")).is_some()
     });
+    apply_ssl_content_len_overrides(config);
+}
+
+/// The selectable `MBEDTLS_SSL_IN_CONTENT_LEN` / `MBEDTLS_SSL_OUT_CONTENT_LEN`
+/// sizes, each exposed as an `ssl-{in,out}-content-len-<N>` cargo feature (see
+/// Cargo.toml). Cargo features are additive, so when several are enabled across
+/// the dependency graph the LARGEST is used — a bigger record buffer is always
+/// safe for the consumer that asked for a smaller one. Keep in sync with the
+/// `ssl-*-content-len-*` feature lists in Cargo.toml.
+pub const SSL_CONTENT_LEN_SIZES: &[usize] = &[256, 512, 1024, 2048, 4096, 8192, 16384];
+
+/// Apply the consumer-selected TLS record-buffer sizes (the
+/// `ssl-{in,out}-content-len-<N>` features) to `config`.
+///
+/// These cap the per-connection record-plaintext buffers MbedTLS `calloc`s in
+/// `mbedtls_ssl_setup`. The largest enabled size per direction wins (additive
+/// features). No size selected — or `16384`, MbedTLS's default — leaves the
+/// macro undefined so the committed prebuilt libraries are reused; any smaller
+/// value is `#define`d, which (being absent from the prebuilt reference config
+/// in `prebuilt_features_config`) registers as a config delta and forces an
+/// on-the-fly MbedTLS rebuild. Applied only here, never to the prebuilt
+/// reference, so the override is always visible as a delta against the `.a`.
+fn apply_ssl_content_len_overrides(config: &mut MbedtlsUserConfig) {
+    // The committed prebuilt artifacts are always built at MbedTLS's default
+    // buffer size, so ignore the size features while generating them (xtask's
+    // `prebuilt` profile) — otherwise the desync guard in build.rs would reject
+    // its own output.
+    if std::env::var_os("CARGO_FEATURE_PREBUILT").is_some() {
+        return;
+    }
+
+    const DEFAULT_CONTENT_LEN: usize = 16384;
+
+    for ident in ["SSL_IN_CONTENT_LEN", "SSL_OUT_CONTENT_LEN"] {
+        let selected = SSL_CONTENT_LEN_SIZES
+            .iter()
+            .copied()
+            .filter(|n| std::env::var_os(format!("CARGO_FEATURE_{ident}_{n}")).is_some())
+            .max();
+
+        if let Some(value) = selected {
+            if value != DEFAULT_CONTENT_LEN {
+                config.set(ident, value.to_string());
+            }
+        }
+    }
 }
 
 /// Build the algorithm-selection config the *prebuilt* artifacts correspond to

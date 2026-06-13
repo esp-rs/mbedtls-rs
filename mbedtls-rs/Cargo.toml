@@ -105,6 +105,22 @@ kex-ecdhe-psk = ["mbedtls-rs-sys/kex-ecdhe-psk"]
 kex-ecjpake = ["mbedtls-rs-sys/kex-ecjpake"]
 platform-zeroize-alt = ["mbedtls-rs-sys/platform-zeroize-alt"]
 
+# TLS record buffer sizing (per-connection RAM) — passthrough to mbedtls-rs-sys.
+ssl-in-content-len-256 = ["mbedtls-rs-sys/ssl-in-content-len-256"]
+ssl-in-content-len-512 = ["mbedtls-rs-sys/ssl-in-content-len-512"]
+ssl-in-content-len-1024 = ["mbedtls-rs-sys/ssl-in-content-len-1024"]
+ssl-in-content-len-2048 = ["mbedtls-rs-sys/ssl-in-content-len-2048"]
+ssl-in-content-len-4096 = ["mbedtls-rs-sys/ssl-in-content-len-4096"]
+ssl-in-content-len-8192 = ["mbedtls-rs-sys/ssl-in-content-len-8192"]
+ssl-in-content-len-16384 = ["mbedtls-rs-sys/ssl-in-content-len-16384"]
+ssl-out-content-len-256 = ["mbedtls-rs-sys/ssl-out-content-len-256"]
+ssl-out-content-len-512 = ["mbedtls-rs-sys/ssl-out-content-len-512"]
+ssl-out-content-len-1024 = ["mbedtls-rs-sys/ssl-out-content-len-1024"]
+ssl-out-content-len-2048 = ["mbedtls-rs-sys/ssl-out-content-len-2048"]
+ssl-out-content-len-4096 = ["mbedtls-rs-sys/ssl-out-content-len-4096"]
+ssl-out-content-len-8192 = ["mbedtls-rs-sys/ssl-out-content-len-8192"]
+ssl-out-content-len-16384 = ["mbedtls-rs-sys/ssl-out-content-len-16384"]
+
 # Re-expose mbedtls-rs-sys features
 use-gcc = ["mbedtls-rs-sys/use-gcc"]
 force-generate-bindings = ["mbedtls-rs-sys/force-generate-bindings"]

@@ -34,6 +34,20 @@ ESP-IDF is also supported and in that case `mbedtls-rs-sys` becomes just an alia
 
 **NOTE:**: on-the-fly compilation can be forced by using the `force-generate-bindings` feature.
 
+## Tuning TLS record buffer sizes (RAM)
+
+By default MbedTLS allocates two ~16 KiB record-plaintext buffers **per TLS connection** (`MBEDTLS_SSL_IN_CONTENT_LEN` / `MBEDTLS_SSL_OUT_CONTENT_LEN` default to `16384`), i.e. ~32 KiB of heap per connection. On RAM-constrained MCUs you can shrink these with the `ssl-in-content-len-<N>` / `ssl-out-content-len-<N>` features (`N` one of `256, 512, 1024, 2048, 4096, 8192, 16384`):
+
+```toml
+mbedtls-rs-sys = { version = "...", features = ["ssl-in-content-len-4096", "ssl-out-content-len-2048"] }
+```
+
+(The `mbedtls-rs` crate re-exposes the same features.)
+
+- **Additive:** Cargo features unify across the dependency graph, so if several `ssl-in-content-len-*` (or `-out-`) are enabled the **largest wins** — a bigger buffer is always safe for the consumer that asked for a smaller one.
+- **Default-preserving:** selecting none (or `-16384`) keeps MbedTLS's default and reuses the committed prebuilt `.a` libraries. A smaller size is `#define`d into the MbedTLS config, which **forces an on-the-fly MbedTLS rebuild** (so `clang`/`cmake`/`ninja` must be installed — see above). A Max-Fragment-Length (MFL) negotiation alone does *not* shrink these buffers; only `*_CONTENT_LEN` does.
+- **`IN` is the risky one:** if the incoming buffer is smaller than a record the peer sends, the handshake/read fails. A **client** lowering `IN` should request MFL ≤ `IN`; a **server** cannot force arbitrary clients to send smaller records, so keep its `IN` conservative. `OUT` is usually less constrained, but an `OUT` smaller than an outgoing handshake message (e.g. a large client certificate chain in mTLS) will also fail the handshake.
+
 ## Hooking (for HW accel)
 
 Putting aside the new PSA Crypto driver layer, MbedTLS 3.X has a relatively simplistic approach ("_ALT" macros) towards hardware acceleration.
