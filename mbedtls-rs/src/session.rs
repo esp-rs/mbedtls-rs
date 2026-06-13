@@ -1,4 +1,4 @@
-use core::ffi::{c_char, c_int, c_void, CStr};
+use core::ffi::{c_char, c_int, c_uchar, c_void, CStr};
 use core::marker::PhantomData;
 use core::ptr::NonNull;
 
@@ -46,6 +46,57 @@ impl AuthMode {
     }
 }
 
+/// RFC 6066 Maximum Fragment Length.
+///
+/// Sets the maximum TLS record *plaintext payload* this endpoint will emit,
+/// subject to the MbedTLS compile-time content lengths
+/// ([`MBEDTLS_SSL_IN_CONTENT_LEN`]/[`MBEDTLS_SSL_OUT_CONTENT_LEN`], i.e. the
+/// `ssl-in-content-len-*`/`ssl-out-content-len-*` features), TLS version
+/// support, and negotiation/peer behavior. On a client the value is also
+/// advertised to the server during the handshake; on a server it caps what the
+/// server emits (normally in response to a client's negotiated value).
+///
+/// # This is NOT a buffer-sizing knob
+///
+/// Per the MbedTLS C source (`ssl.h`), with TLS this currently affects only
+/// `ApplicationData` records, *not* handshake messages. It therefore does
+/// **not** reduce the buffer required to receive a server `Certificate` (a
+/// handshake message) and is **not** a substitute for the
+/// `ssl-in-content-len-*` features when sizing buffers for the handshake. To
+/// actually shrink the record buffers, set those features instead.
+///
+/// # Scope
+///
+/// This is a TLS 1.2 / RFC 6066 mechanism; it has no effect on TLS 1.3, which
+/// uses `record_size_limit` (RFC 8449, not exposed here). The default
+/// [`MaxFragLen::None`] preserves MbedTLS's behavior (no extension sent).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum MaxFragLen {
+    /// No Max Fragment Length extension (MbedTLS default; no behavior change).
+    None,
+    /// Cap the record payload at 512 bytes.
+    B512,
+    /// Cap the record payload at 1024 bytes.
+    B1024,
+    /// Cap the record payload at 2048 bytes.
+    B2048,
+    /// Cap the record payload at 4096 bytes.
+    B4096,
+}
+
+impl MaxFragLen {
+    fn mfl_code(&self) -> c_uchar {
+        (match self {
+            MaxFragLen::None => MBEDTLS_SSL_MAX_FRAG_LEN_NONE,
+            MaxFragLen::B512 => MBEDTLS_SSL_MAX_FRAG_LEN_512,
+            MaxFragLen::B1024 => MBEDTLS_SSL_MAX_FRAG_LEN_1024,
+            MaxFragLen::B2048 => MBEDTLS_SSL_MAX_FRAG_LEN_2048,
+            MaxFragLen::B4096 => MBEDTLS_SSL_MAX_FRAG_LEN_4096,
+        }) as c_uchar
+    }
+}
+
 /// The credentials (certificate and private key)
 /// used for client or server authentication
 #[derive(Debug, Clone)]
@@ -79,6 +130,11 @@ pub struct ClientSessionConfig<'a> {
     pub min_version: TlsVersion,
     /// ALPN protocols
     pub alpn_protocols: Option<&'a [&'a CStr]>,
+    /// RFC 6066 Maximum Fragment Length to advertise to the server.
+    /// Defaults to [MaxFragLen::None] (no extension; unchanged behavior).
+    /// See [MaxFragLen] - this caps ApplicationData record payload, not
+    /// handshake buffers.
+    pub max_frag_len: MaxFragLen,
 }
 
 impl<'a> Default for ClientSessionConfig<'a> {
@@ -96,6 +152,7 @@ impl<'a> ClientSessionConfig<'a> {
             auth_mode: AuthMode::Required,
             min_version: TlsVersion::Tls1_2,
             alpn_protocols: None,
+            max_frag_len: MaxFragLen::None,
         }
     }
 }
@@ -118,6 +175,11 @@ pub struct ServerSessionConfig<'a> {
     pub min_version: TlsVersion,
     /// ALPN protocols
     pub alpn_protocols: Option<&'a [&'a CStr]>,
+    /// RFC 6066 Maximum Fragment Length the server will emit.
+    /// Defaults to [MaxFragLen::None] (no cap; unchanged behavior).
+    /// See [MaxFragLen] - this caps ApplicationData record payload, not
+    /// handshake buffers, and does not force clients to send smaller records.
+    pub max_frag_len: MaxFragLen,
 }
 
 impl<'a> ServerSessionConfig<'a> {
@@ -128,6 +190,7 @@ impl<'a> ServerSessionConfig<'a> {
             auth_mode: AuthMode::None,
             min_version: TlsVersion::Tls1_2,
             alpn_protocols: None,
+            max_frag_len: MaxFragLen::None,
         }
     }
 }
@@ -166,6 +229,13 @@ impl<'a> SessionConfig<'a> {
         match self {
             SessionConfig::Client(ClientSessionConfig { min_version, .. }) => *min_version,
             SessionConfig::Server(ServerSessionConfig { min_version, .. }) => *min_version,
+        }
+    }
+
+    fn max_frag_len(&self) -> MaxFragLen {
+        match self {
+            SessionConfig::Client(ClientSessionConfig { max_frag_len, .. }) => *max_frag_len,
+            SessionConfig::Server(ServerSessionConfig { max_frag_len, .. }) => *max_frag_len,
         }
     }
 
@@ -278,6 +348,10 @@ impl<'a> SessionState<'a> {
         unsafe {
             mbedtls_ssl_conf_authmode(&mut *ssl_config, conf.auth_mode().mbedtls_authmode());
         }
+
+        merr!(unsafe {
+            mbedtls_ssl_conf_max_frag_len(&mut *ssl_config, conf.max_frag_len().mfl_code())
+        })?;
 
         if let Some(creds) = conf.creds() {
             merr!(unsafe {
