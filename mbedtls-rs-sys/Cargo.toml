@@ -28,6 +28,29 @@ default = ["tls"]
 # hooks match this profile exactly.
 prebuilt = ["tls"]
 
+# ─── TLS record buffer sizing (per-connection RAM) ───
+# Cap MBEDTLS_SSL_IN/OUT_CONTENT_LEN below the 16384 default to shrink the
+# per-connection record buffers. Cargo features are additive, so when several
+# sizes are selected across the dependency graph the LARGEST wins (a bigger
+# record buffer is always safe). None selected — or the `-16384` entry — keeps
+# MbedTLS's default and reuses the prebuilt libraries; any smaller value forces
+# an on-the-fly MbedTLS rebuild. Keep in sync with
+# `gen/features.rs::SSL_CONTENT_LEN_SIZES`.
+ssl-in-content-len-256 = []
+ssl-in-content-len-512 = []
+ssl-in-content-len-1024 = []
+ssl-in-content-len-2048 = []
+ssl-in-content-len-4096 = []
+ssl-in-content-len-8192 = []
+ssl-in-content-len-16384 = []
+ssl-out-content-len-256 = []
+ssl-out-content-len-512 = []
+ssl-out-content-len-1024 = []
+ssl-out-content-len-2048 = []
+ssl-out-content-len-4096 = []
+ssl-out-content-len-8192 = []
+ssl-out-content-len-16384 = []
+
 # Always generate the bindings during build, even if pre-built bindings for the build target are available
 force-generate-bindings = []
 # Use GCC instead of clang
