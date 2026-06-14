@@ -594,12 +594,12 @@ where
             {
                 MBEDTLS_ERR_SSL_WANT_READ => {
                     if !self.wait_readable().await.map_err(SessionError::from_io)? {
-                        return Err(SessionError::Io(ErrorKind::BrokenPipe));
+                        return Err(SessionError::Io(ErrorKind::ConnectionReset));
                     }
                 }
                 MBEDTLS_ERR_SSL_WANT_WRITE => {
                     if !self.wait_writable().await.map_err(SessionError::from_io)? {
-                        return Err(SessionError::Io(ErrorKind::BrokenPipe));
+                        return Err(SessionError::Io(ErrorKind::ConnectionReset));
                     }
                 }
                 // See https://github.com/Mbed-TLS/mbedtls/issues/8749
@@ -629,7 +629,7 @@ where
             {
                 MBEDTLS_ERR_SSL_WANT_READ => {
                     if !self.wait_readable().await.map_err(SessionError::from_io)? {
-                        return Err(SessionError::Io(ErrorKind::BrokenPipe));
+                        return Err(SessionError::Io(ErrorKind::ConnectionReset));
                     }
                 }
                 // See https://github.com/Mbed-TLS/mbedtls/issues/8749
@@ -663,7 +663,7 @@ where
             {
                 MBEDTLS_ERR_SSL_WANT_WRITE => {
                     if !self.wait_writable().await.map_err(SessionError::from_io)? {
-                        return Err(SessionError::Io(ErrorKind::BrokenPipe));
+                        return Err(SessionError::Io(ErrorKind::ConnectionReset));
                     }
                 }
                 // See https://github.com/Mbed-TLS/mbedtls/issues/8749
@@ -680,7 +680,7 @@ where
     /// and then flushing the stream
     async fn flush(&mut self) -> Result<(), SessionError> {
         if !self.wait_writable().await.map_err(SessionError::from_io)? {
-            return Err(SessionError::Io(ErrorKind::BrokenPipe));
+            return Err(SessionError::Io(ErrorKind::ConnectionReset));
         }
 
         self.stream.flush().await.map_err(SessionError::from_io)

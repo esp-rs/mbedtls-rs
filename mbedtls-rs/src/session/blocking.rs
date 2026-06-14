@@ -1,6 +1,6 @@
 use core::ffi::{c_int, c_uchar, c_void, CStr};
 
-use io::{ErrorType, Read, Write};
+use io::{Error, ErrorKind, ErrorType, Read, Write};
 
 use crate::sys::*;
 
@@ -25,6 +25,13 @@ where
     connected: bool,
     /// Whether we received a close notify from the peer
     eof: bool,
+    /// The real I/O error kind captured by a BIO callback, if any.
+    ///
+    /// A BIO callback can only return an `i32` to MbedTLS, so a stream `Err`
+    /// (or a zero-length read meaning EOF) is recorded here and surfaced by the
+    /// `read`/`write`/handshake loops, which would otherwise only see an opaque
+    /// MbedTLS code.
+    last_io_err: Option<ErrorKind>,
     /// Reference to the active Tls instance
     _tls_ref: TlsReference<'a>,
 }
@@ -52,6 +59,7 @@ where
             state: SessionState::new(config)?,
             connected: false,
             eof: false,
+            last_io_err: None,
             _tls_ref: tls,
         })
     }
@@ -99,6 +107,9 @@ where
                 // See https://github.com/Mbed-TLS/mbedtls/issues/8749
                 MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET => continue,
                 other => {
+                    if let Some(kind) = self.last_io_err.take() {
+                        return Err(SessionError::Io(kind));
+                    }
                     merr!(other)?;
 
                     self.connected = true;
@@ -171,6 +182,13 @@ where
             return Ok(0);
         }
 
+        // A zero-length read is `Ok(0)` by the `Read` contract; without this
+        // `mbedtls_ssl_read` would return 0 and the `other == 0` arm below
+        // would misreport it as an abrupt close.
+        if buf.is_empty() {
+            return Ok(0);
+        }
+
         loop {
             match self.call_mbedtls(|ssl_ctx| unsafe {
                 mbedtls_ssl_read(ssl_ctx as *const _ as *mut _, buf.as_mut_ptr(), buf.len())
@@ -183,6 +201,16 @@ where
                     break Ok(0);
                 }
                 other => {
+                    if let Some(kind) = self.last_io_err.take() {
+                        break Err(SessionError::Io(kind));
+                    }
+                    // A BIO `CONN_EOF` makes `mbedtls_ssl_read` return 0 (it is
+                    // not propagated as the negative code), so an abrupt close
+                    // with no TLS close-notify lands here as 0 and surfaces as
+                    // `ConnectionReset`.
+                    if other == 0 {
+                        break Err(SessionError::Io(ErrorKind::ConnectionReset));
+                    }
                     let len = merr!(other)?;
                     break Ok(len as usize);
                 }
@@ -208,6 +236,9 @@ where
                 // See https://github.com/Mbed-TLS/mbedtls/issues/8749
                 MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET => continue,
                 other => {
+                    if let Some(kind) = self.last_io_err.take() {
+                        break Err(SessionError::Io(kind));
+                    }
                     let len = merr!(other)?;
                     break Ok(len as usize);
                 }
@@ -238,9 +269,12 @@ where
             return Ok(());
         }
 
-        merr!(
-            self.call_mbedtls(|ssl| unsafe { mbedtls_ssl_close_notify(ssl as *const _ as *mut _) })
-        )?;
+        let result =
+            self.call_mbedtls(|ssl| unsafe { mbedtls_ssl_close_notify(ssl as *const _ as *mut _) });
+        if let Some(kind) = self.last_io_err.take() {
+            return Err(SessionError::Io(kind));
+        }
+        merr!(result)?;
 
         self.flush()?;
 
@@ -254,6 +288,10 @@ where
     where
         F: FnMut(&mut mbedtls_ssl_context) -> c_int,
     {
+        // Clear any error captured by a previous call so a stale kind can never
+        // leak into this call's result; the BIO callbacks set it afresh.
+        self.last_io_err = None;
+
         unsafe {
             mbedtls_ssl_set_bio(
                 &mut *self.state.ssl_context as *mut _,
@@ -283,33 +321,36 @@ where
 
     /// The MbedTLS BIO receive callback
     fn bio_receive(&mut self, buf: &mut [u8]) -> c_int {
-        let res = self.stream.read(buf);
-
-        match res {
-            Ok(len) => {
-                if len == 0 {
-                    MBEDTLS_ERR_SSL_WANT_READ
-                } else {
-                    len as c_int
-                }
+        match self.stream.read(buf) {
+            // `embedded-io`'s `Read` reports EOF as `Ok(0)` for a non-empty
+            // buffer (and MbedTLS always passes a non-empty one). Returning
+            // `CONN_EOF` terminates the read; returning `WANT_READ` here made
+            // MbedTLS retry forever against a closed stream.
+            Ok(0) => MBEDTLS_ERR_SSL_CONN_EOF,
+            Ok(len) => len as c_int,
+            Err(e) => {
+                self.last_io_err = Some(e.kind());
+                MBEDTLS_ERR_SSL_CONN_EOF
             }
-            Err(_) => 0,
         }
     }
 
     /// The MbedTLS BIO send callback
     fn bio_send(&mut self, data: &[u8]) -> c_int {
-        let res = self.stream.write(data);
-
-        match res {
-            Ok(written) => {
-                if written > 0 {
-                    written as i32
-                } else {
-                    MBEDTLS_ERR_SSL_WANT_WRITE
-                }
+        match self.stream.write(data) {
+            // `embedded-io`'s `Write` must not return `Ok(0)` for a non-empty
+            // buffer (it reports `WriteZero` instead), so a `0` here is a
+            // non-conforming stream making no progress; terminate rather than
+            // spin retrying `WANT_WRITE`.
+            Ok(0) => {
+                self.last_io_err = Some(ErrorKind::WriteZero);
+                MBEDTLS_ERR_SSL_CONN_EOF
             }
-            Err(_) => 0,
+            Ok(written) => written as c_int,
+            Err(e) => {
+                self.last_io_err = Some(e.kind());
+                MBEDTLS_ERR_SSL_CONN_EOF
+            }
         }
     }
 
