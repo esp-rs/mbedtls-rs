@@ -1,6 +1,7 @@
 use core::ffi::{c_int, c_uchar, c_void, CStr};
 use core::future::{poll_fn, Future};
 use core::pin::pin;
+use core::ptr::NonNull;
 use core::task::{Context, Poll};
 
 use embedded_io::ErrorKind;
@@ -175,17 +176,21 @@ where
 
         let (read, write) = self.stream.split();
 
+        // Derive one write-provenance pointer from a unique borrow of the owning
+        // MBox; both halves use it to drive the same context.
+        let ssl_context = unsafe { NonNull::new_unchecked(self.state.ssl_context.as_mut_ptr()) };
+
         Ok((
             SessionRead {
                 stream: NoWrite(read),
-                ssl_context: &self.state.ssl_context,
+                ssl_context,
                 eof: &mut self.eof,
                 read_byte: &mut self.read_byte,
                 write_byte: None,
             },
             SessionWrite {
                 stream: NoRead(write),
-                ssl_context: &self.state.ssl_context,
+                ssl_context,
                 eof: false,
                 read_byte: None,
                 write_byte: &mut self.write_byte,
@@ -357,8 +362,8 @@ where
 {
     /// The underlying stream
     stream: NoWrite<T>,
-    /// The MbedTLS SSL context
-    ssl_context: &'a mbedtls_ssl_context,
+    /// The MbedTLS SSL context (write-provenance pointer; see `MBio`).
+    ssl_context: NonNull<mbedtls_ssl_context>,
     /// Whether we had received a close notify from the peer
     eof: &'a mut bool,
     /// A state necessary so as to implement `MBio::wait_readable`
@@ -404,8 +409,8 @@ where
 {
     /// The underlying stream
     stream: NoRead<T>,
-    /// The MbedTLS SSL context
-    ssl_context: &'a mbedtls_ssl_context,
+    /// The MbedTLS SSL context (write-provenance pointer; see `MBio`).
+    ssl_context: NonNull<mbedtls_ssl_context>,
     /// A dummy value, as we don't need to track EOF in the write half
     eof: bool,
     /// A state necessary so as to implement `MBio::wait_readable`
@@ -488,8 +493,12 @@ where
 struct MBio<'a, T> {
     /// The underlying stream
     stream: T,
-    /// The MbedTLS SSL context
-    ssl_context: &'a mbedtls_ssl_context,
+    /// The MbedTLS SSL context, held as a write-provenance pointer so MbedTLS
+    /// can write through it via FFI. Must be derived from a unique borrow of
+    /// the owning context, never from a shared reference. The `'a` lifetime is
+    /// pinned by the `&'a mut` fields below, so the pointer cannot outlive the
+    /// `Session` that owns the context.
+    ssl_context: NonNull<mbedtls_ssl_context>,
     /// `true` if we had received a close notify from the peer
     eof: &'a mut bool,
     /// A state necessary so as to implement `MBio::wait_readable`
@@ -503,9 +512,12 @@ where
     T: Read + Write,
 {
     fn from_session(session: &'a mut Session<'_, T>) -> Self {
+        // Derive the context pointer from a unique borrow of the owning MBox so
+        // it carries write provenance.
+        let ssl_context = unsafe { NonNull::new_unchecked(session.state.ssl_context.as_mut_ptr()) };
         Self::new(
             &mut session.stream,
-            &session.state.ssl_context,
+            ssl_context,
             &mut session.eof,
             &mut session.read_byte,
             &mut session.write_byte,
@@ -549,7 +561,7 @@ where
 {
     const fn new(
         stream: T,
-        ssl_context: &'a mbedtls_ssl_context,
+        ssl_context: NonNull<mbedtls_ssl_context>,
         eof: &'a mut bool,
         read_byte: &'a mut Option<u8>,
         write_byte: &'a mut Option<u8>,
@@ -567,22 +579,17 @@ where
     async fn connect(&mut self, saved_session: Option<&SavedSession>) -> Result<(), SessionError> {
         debug!("Establishing SSL connection");
 
-        merr!(unsafe { mbedtls_ssl_session_reset(self.ssl_context as *const _ as *mut _) })?;
+        merr!(unsafe { mbedtls_ssl_session_reset(self.ssl_context.as_ptr()) })?;
 
         if let Some(saved_session) = saved_session {
             merr!(unsafe {
-                mbedtls_ssl_set_session(
-                    self.ssl_context as *const _ as *mut _,
-                    &*saved_session.mbedtls_session,
-                )
+                mbedtls_ssl_set_session(self.ssl_context.as_ptr(), &*saved_session.mbedtls_session)
             })?;
         }
 
         loop {
             match self
-                .call_mbedtls(|ssl_ctx| unsafe {
-                    mbedtls_ssl_handshake(ssl_ctx as *const _ as *mut _)
-                })
+                .call_mbedtls(|ssl_ctx| unsafe { mbedtls_ssl_handshake(ssl_ctx) })
                 .await
             {
                 MBEDTLS_ERR_SSL_WANT_READ => {
@@ -616,11 +623,7 @@ where
         loop {
             match self
                 .call_mbedtls(|ssl_ctx| unsafe {
-                    mbedtls_ssl_read(
-                        ssl_ctx as *const _ as *mut _,
-                        buf.as_mut_ptr() as *mut _,
-                        buf.len() as _,
-                    )
+                    mbedtls_ssl_read(ssl_ctx, buf.as_mut_ptr() as *mut _, buf.len() as _)
                 })
                 .await
             {
@@ -654,11 +657,7 @@ where
         loop {
             match self
                 .call_mbedtls(|ssl_ctx| unsafe {
-                    mbedtls_ssl_write(
-                        ssl_ctx as *const _ as *mut _,
-                        data.as_ptr() as *const _,
-                        data.len() as _,
-                    )
+                    mbedtls_ssl_write(ssl_ctx, data.as_ptr() as *const _, data.len() as _)
                 })
                 .await
             {
@@ -690,7 +689,7 @@ where
     /// Close the TLS connection by sending the "close notify" alert to the peer and flushing the stream
     pub async fn close(&mut self) -> Result<(), SessionError> {
         merr!(
-            self.call_mbedtls(|ssl| unsafe { mbedtls_ssl_close_notify(ssl as *const _ as *mut _) })
+            self.call_mbedtls(|ssl| unsafe { mbedtls_ssl_close_notify(ssl) })
                 .await
         )?;
 
@@ -744,14 +743,16 @@ where
     /// and with a proper context for the async operations on the underlying stream
     async fn call_mbedtls<F>(&mut self, mut f: F) -> i32
     where
-        F: FnMut(&mbedtls_ssl_context) -> i32,
+        F: FnMut(*mut mbedtls_ssl_context) -> i32,
     {
         poll_fn(|ctx| {
             let mut io_ctx = MBioCallCtx { io: self, ctx };
 
+            let ssl_context = io_ctx.io.ssl_context.as_ptr();
+
             unsafe {
                 mbedtls_ssl_set_bio(
-                    io_ctx.io.ssl_context as *const _ as *mut _,
+                    ssl_context,
                     &mut io_ctx as *const _ as *mut MBioCallCtx<'_, '_, '_, T> as *mut c_void,
                     Some(Self::raw_send),
                     Some(Self::raw_receive),
@@ -759,18 +760,12 @@ where
                 );
             }
 
-            let result = f(io_ctx.io.ssl_context);
+            let result = f(ssl_context);
 
             // Remove the callbacks so that we get a warning from MbedTLS in case
             // it needs to invoke them when we don't anticipate so (for bugs detection)
             unsafe {
-                mbedtls_ssl_set_bio(
-                    io_ctx.io.ssl_context as *const _ as *mut _,
-                    core::ptr::null_mut(),
-                    None,
-                    None,
-                    None,
-                );
+                mbedtls_ssl_set_bio(ssl_context, core::ptr::null_mut(), None, None, None);
             }
 
             Poll::Ready(result)

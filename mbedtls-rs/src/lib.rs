@@ -316,6 +316,18 @@ where
     fn as_mut(&mut self) -> &mut T {
         unsafe { self.0.as_mut() }
     }
+
+    /// Get the raw pointer to the inner value.
+    ///
+    /// The pointer is the original allocation pointer preserved in the
+    /// `NonNull` (not derived from a Rust reference), so writing through it
+    /// (e.g. by C code via FFI) is sound. Taking `&mut self` ensures the caller
+    /// is not simultaneously holding a shared reference to the same object via
+    /// `Deref`. Used by the async session path, which must hand MbedTLS a `*mut`
+    /// it can write through.
+    fn as_mut_ptr(&mut self) -> *mut T {
+        self.0.as_ptr()
+    }
 }
 
 impl<T> Deref for MBox<T>
