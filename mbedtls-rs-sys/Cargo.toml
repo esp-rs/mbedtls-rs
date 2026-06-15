@@ -13,6 +13,15 @@ exclude = ["*.pyc", "mbedtls/framework", "mbedtls/programs", "mbedtls/tests"]
 [lib]
 harness = false
 
+# Host-only routing test (F-01). Gated on the internal `_route-test` feature so
+# the default `cargo test` (no `crypto-bigint`) skips this target entirely.
+# `harness = true` is the integration-test default and set here only for clarity
+# (the `[lib] harness = false` above governs the lib target, not `tests/`).
+[[test]]
+name = "exp_mod_route"
+required-features = ["_route-test"]
+harness = true
+
 [features]
 # The default profile is the full config (`tls`), so behavior is unchanged for
 # existing consumers and the pre-generated bindings/libs apply as-is. Select a
@@ -82,6 +91,12 @@ esp32c6 = ["esp-hal/esp32c6", "crypto-bigint", "time"]
 esp32h2 = ["esp-hal/esp32h2", "crypto-bigint", "time"]
 esp32s2 = ["esp-hal/esp32s2", "crypto-bigint", "time"]
 esp32s3 = ["esp-hal/esp32s3", "crypto-bigint", "time"]
+
+# Internal: host-only testing of the ESP exp_mod routing logic. Pulls in
+# `crypto-bigint` (for the operand-size limb constants) WITHOUT `esp-hal`, so
+# `backend::esp_exp_mod_route` and its integration test compile on the host.
+# Not for downstream use.
+_route-test = ["crypto-bigint"]
 
 # ---------------------------------------------------------------------------
 # Features controlling what MbedTLS algorithms gets compiled in.
