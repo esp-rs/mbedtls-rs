@@ -392,6 +392,26 @@ where
     fn as_ref(&self) -> &T {
         &unsafe { self.0.as_ref() }.0
     }
+
+    /// Get a raw pointer to the inner value, with write provenance.
+    ///
+    /// The pointer is projected from the original `(T, usize)` allocation
+    /// pointer in the `NonNull` (not derived from a Rust reference), so writing
+    /// through it (e.g. by C code via FFI) is sound. `addr_of_mut!` projects the
+    /// `.0` field without ever forming an intermediate reference, and must be
+    /// used rather than `self.0.as_ptr().cast::<T>()` because the field order of
+    /// the `(T, usize)` tuple is not guaranteed.
+    ///
+    /// SAFETY: unlike `MBox`, `MRc` is `Clone`, so `&mut self` alone does not
+    /// guarantee unique access to the inner `T` (a clone could be reading it).
+    /// The caller must ensure no other live reference to the inner `T` exists
+    /// for the duration of the write. This holds at construction, where the
+    /// `MRc` is freshly allocated, has refcount 1 and has not yet been cloned -
+    /// which is the only context this is used in. Writing through this pointer
+    /// while a clone concurrently dereferences the value would be UB.
+    fn as_mut_ptr(&mut self) -> *mut T {
+        unsafe { core::ptr::addr_of_mut!((*self.0.as_ptr()).0) }
+    }
 }
 
 impl<T> Clone for MRc<T>

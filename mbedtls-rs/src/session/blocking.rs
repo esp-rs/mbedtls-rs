@@ -86,7 +86,7 @@ where
         if let Some(saved_session) = saved_session {
             merr!(unsafe {
                 mbedtls_ssl_set_session(
-                    &*self.state.ssl_context as *const _ as *mut _,
+                    &mut *self.state.ssl_context as *mut _,
                     &*saved_session.mbedtls_session,
                 )
             })?;
@@ -270,7 +270,7 @@ where
         // it needs to invoke them when we don't anticipate so (for bugs detection)
         unsafe {
             mbedtls_ssl_set_bio(
-                &*self.state.ssl_context as *const _ as *mut _,
+                &mut *self.state.ssl_context as *mut _,
                 core::ptr::null_mut(),
                 None,
                 None,
