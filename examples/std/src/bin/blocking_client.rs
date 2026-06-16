@@ -24,7 +24,10 @@ fn main() {
     info!("Initializing TLS");
 
     let mut rng = rng::StdRng;
-    let mut tls = Tls::new(&mut rng).unwrap();
+    // SAFETY: `rng` is declared before `tls` and outlives it; `tls` is dropped
+    // at the end of this scope and never leaked, so the borrow stays valid for
+    // the whole lifetime of the global RNG slot.
+    let mut tls = unsafe { Tls::new_local_borrows(&mut rng) }.unwrap();
 
     tls.set_debug(1);
 
