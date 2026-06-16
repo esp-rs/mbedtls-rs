@@ -4,7 +4,10 @@ use io::{Error, ErrorKind, ErrorType, Read, Write};
 
 use crate::sys::*;
 
-use super::{SavedSession, SessionConfig, SessionError, SessionState, TlsReference};
+use super::{
+    check_saved_session_server_name, SavedSession, ServerName, SessionConfig, SessionError,
+    SessionState, TlsReference,
+};
 
 /// Re-export of the `embedded-io` crate so that users don't have to explicitly depend on it
 /// to use e.g. `write_all` or `read_exact`.
@@ -69,11 +72,22 @@ where
         &mut self.stream
     }
 
-    /// Set the server name for the TLS connection
+    /// Set the server name for the TLS connection.
+    ///
+    /// Must be called before the handshake is triggered (by `connect`,
+    /// `connect_with_session`, `read`, or `write`); changing the server name on
+    /// an already-connected session is rejected, because the saved session would
+    /// otherwise be bound to a name that was not used to negotiate it.
     ///
     /// # Arguments
     /// - `server_name`: The server name as a C string
     pub fn set_server_name(&mut self, server_name: &CStr) -> Result<(), SessionError> {
+        if self.connected {
+            return Err(SessionError::MbedTls(MbedtlsError::new(
+                MBEDTLS_ERR_SSL_BAD_INPUT_DATA,
+            )));
+        }
+
         merr!(unsafe {
             mbedtls_ssl_set_hostname(&mut *self.state.ssl_context, server_name.as_ptr())
         })?;
@@ -92,6 +106,14 @@ where
         merr!(unsafe { mbedtls_ssl_session_reset(&mut *self.state.ssl_context) })?;
 
         if let Some(saved_session) = saved_session {
+            // Reject resuming a session captured for a different server name
+            // before installing it (cross-host resume can skip cert validation
+            // on TLS 1.2). See `check_saved_session_server_name`.
+            check_saved_session_server_name(
+                &saved_session.server_name,
+                self.state.ssl_context.private_hostname,
+            )?;
+
             merr!(unsafe {
                 mbedtls_ssl_set_session(
                     &mut *self.state.ssl_context as *mut _,
@@ -375,7 +397,24 @@ where
 
         merr!(unsafe { mbedtls_ssl_get_session(&*self.state.ssl_context, &mut *mbedtls_session) })?;
 
-        Ok(SavedSession { mbedtls_session })
+        let hostname_ptr = self.state.ssl_context.private_hostname;
+        let server_name = if hostname_ptr.is_null() {
+            None
+        } else {
+            // SAFETY: a non-null hostname pointer on `mbedtls_ssl_context` is a
+            // heap-allocated, nul-terminated string owned by the SSL context;
+            // we only borrow it long enough to copy its bytes.
+            let cstr = unsafe { CStr::from_ptr(hostname_ptr) };
+            Some(
+                ServerName::from_cstr(cstr)
+                    .ok_or(MbedtlsError::new(MBEDTLS_ERR_SSL_ALLOC_FAILED))?,
+            )
+        };
+
+        Ok(SavedSession {
+            mbedtls_session,
+            server_name,
+        })
     }
 }
 
