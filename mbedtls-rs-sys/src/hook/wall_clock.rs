@@ -3,7 +3,12 @@ use crate::tm;
 pub trait MbedtlsWallClock {
     /// Get current wall clock time as broken-down time structure.
     ///
-    /// Returns the current calendar time in UTC as a `tm` structure.
+    /// Returns the current calendar time in UTC as a `tm` structure, or `None`
+    /// if the wall clock is unavailable or its value cannot be represented (for
+    /// example an uninitialized RTC, or a timestamp outside the representable
+    /// range). When `None` is returned, MbedTLS X.509 certificate validation
+    /// fails closed: the certificate is treated as both expired and not yet
+    /// valid, so an unusable clock can never cause a certificate to be accepted.
     ///
     /// The `tm` struct contains the following fields:
     /// - `tm_sec`: seconds after the minute - [0, 60]
@@ -20,10 +25,7 @@ pub trait MbedtlsWallClock {
     /// This function should return the current wall clock time. The wall clock implementation is
     /// decoupled from the timer implementation (which provides monotonic timing for timeouts).
     /// MbedTLS uses this for X.509 certificate time validation.
-    ///
-    /// # Returns
-    /// - `tm` - Current time as a broken-down time structure
-    fn instant(&self) -> tm;
+    fn instant(&self) -> Option<tm>;
 }
 
 /// Hook the wall clock function
@@ -80,6 +82,9 @@ mod alt {
     /// Pointer to `tm_buf` on success, or null if:
     /// - `tm_buf` is null
     /// - No wall clock implementation is hooked
+    /// - The hooked implementation returned `None` (clock unavailable or
+    ///   unrepresentable), in which case MbedTLS certificate validation fails
+    ///   closed
     #[no_mangle]
     unsafe extern "C" fn mbedtls_platform_gmtime_r(
         _tt: *const mbedtls_time_t,
@@ -89,15 +94,18 @@ mod alt {
             return ptr::null_mut();
         }
 
-        critical_section::with(|cs| {
-            WALL_CLOCK
-                .borrow(cs)
-                .get()
-                .map(|wc| {
-                    *tm_buf = wc.instant();
-                    tm_buf
-                })
-                .unwrap_or_default()
-        })
+        // Copy the hook pointer out under the lock, then release the critical
+        // section BEFORE calling the user's `instant()`: that call may read an
+        // RTC over a bus and must not run with interrupts disabled (mirrors
+        // `mbedtls_ms_time` in `timer.rs`).
+        let wc = critical_section::with(|cs| WALL_CLOCK.borrow(cs).get());
+
+        match wc.and_then(|wc| wc.instant()) {
+            Some(now) => {
+                *tm_buf = now;
+                tm_buf
+            }
+            None => ptr::null_mut(),
+        }
     }
 }

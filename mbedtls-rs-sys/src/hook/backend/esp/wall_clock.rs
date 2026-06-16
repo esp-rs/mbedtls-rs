@@ -50,23 +50,21 @@ impl<'d, T> MbedtlsWallClock for EspRtcWallClock<'d, T>
 where
     T: core::borrow::Borrow<esp_hal::rtc_cntl::Rtc<'d>>,
 {
-    /// Returns the current time from the RTC.
+    /// Returns the current time from the RTC, or `None` if the RTC is
+    /// uninitialized or its value is outside the representable range (in which
+    /// case MbedTLS certificate validation fails closed rather than panicking).
     ///
-    /// # Panics
-    ///
-    /// Panics if the RTC time is out of the valid range for `OffsetDateTime`.
-    /// This can occur if the RTC was not properly initialized with a valid timestamp
-    /// (e.g., via NTP or manual setting).
-    fn instant(&self) -> tm {
-        let rtc_time_secs = (self.rtc.borrow().current_time_us() / 1_000_000) as i64;
+    /// An uninitialized RTC (for example before the time has been set via NTP)
+    /// is the common reason this returns `None`.
+    fn instant(&self) -> Option<tm> {
+        let rtc_time_secs = i64::try_from(self.rtc.borrow().current_time_us() / 1_000_000).ok()?;
 
-        let datetime = time::OffsetDateTime::from_unix_timestamp(rtc_time_secs)
-            .expect("RTC time out of range, ensure RTC is initialized with valid time");
+        let datetime = time::OffsetDateTime::from_unix_timestamp(rtc_time_secs).ok()?;
 
         let date = datetime.date();
         let time = datetime.time();
 
-        tm {
+        Some(tm {
             tm_sec: time.second() as i32,
             tm_min: time.minute() as i32,
             tm_hour: time.hour() as i32,
@@ -76,6 +74,6 @@ where
             tm_wday: date.weekday().number_days_from_sunday() as i32,
             tm_yday: date.ordinal() as i32 - 1, // MbedTLS uses 0-365
             tm_isdst: 0,
-        }
+        })
     }
 }
