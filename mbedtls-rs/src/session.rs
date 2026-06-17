@@ -15,9 +15,96 @@ pub use asynch::*;
 mod asynch;
 pub mod blocking;
 
+/// An owned, nul-terminated server name allocated through MbedTLS's allocator
+/// (`mbedtls_calloc`/`mbedtls_free`), so it honours a user-overridden MbedTLS
+/// heap instead of the Rust global allocator. Used to bind a saved session to a
+/// peer identity (see [`SavedSession`]).
+pub(crate) struct ServerName {
+    ptr: NonNull<u8>,
+}
+
+impl ServerName {
+    /// Copy a `&CStr`'s bytes (including the nul) into a fresh MbedTLS-allocated
+    /// buffer. Returns `None` if the allocation fails.
+    fn from_cstr(name: &CStr) -> Option<Self> {
+        Self::from_bytes_with_nul(name.to_bytes_with_nul())
+    }
+
+    fn from_bytes_with_nul(bytes: &[u8]) -> Option<Self> {
+        // SAFETY: `mbedtls_calloc` is the MbedTLS allocator entry point; requesting
+        // `bytes.len()` elements of one byte each yields a `bytes.len()`-byte (or
+        // null) allocation, which `NonNull::new` checks before we treat it as owned.
+        let ptr =
+            NonNull::new(unsafe { mbedtls_calloc(bytes.len(), size_of::<u8>()) }.cast::<u8>())?;
+
+        // SAFETY: `ptr` points to a fresh `bytes.len()`-byte allocation, and the
+        // source slice is independent of it.
+        unsafe {
+            core::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr.as_ptr(), bytes.len());
+        }
+
+        Some(Self { ptr })
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        // SAFETY: `ptr` was constructed from a nul-terminated source slice in
+        // `from_bytes_with_nul` and is never mutated after construction.
+        unsafe { CStr::from_ptr(self.ptr.as_ptr().cast::<c_char>()) }.to_bytes_with_nul()
+    }
+}
+
+impl Drop for ServerName {
+    fn drop(&mut self) {
+        // SAFETY: `ptr` was allocated by `mbedtls_calloc` in `from_bytes_with_nul`,
+        // is owned solely by this `ServerName`, and is freed exactly once here.
+        unsafe {
+            mbedtls_free(self.ptr.as_ptr() as *mut c_void);
+        }
+    }
+}
+
 /// A reusable TLS session state captured from a connected session.
+///
+/// A saved session is bound to the server name that was configured when it was
+/// captured, and [`Session::connect_with_session`] refuses to resume it against
+/// a different server name (see that method). A session captured without a
+/// server name carries no peer binding and may only be resumed into an equally
+/// nameless session.
 pub struct SavedSession {
     pub(crate) mbedtls_session: MBox<mbedtls_ssl_session>,
+    /// The server name the originating session was configured with, used to
+    /// reject cross-host resume. `None` if the session had no server name.
+    pub(crate) server_name: Option<ServerName>,
+}
+
+/// Reject reusing a saved session against a different peer identity.
+///
+/// TLS 1.2 resume acceptance does not re-validate the server certificate, so a
+/// session saved for host A presented to a server B that accepts it would skip
+/// verifying B's certificate. We enforce the binding in the wrapper for both TLS
+/// 1.2 and 1.3 (1.3 also checks in C). `None`/`Some` are treated as distinct, so
+/// a nameless saved session only resumes into a nameless session.
+pub(crate) fn check_saved_session_server_name(
+    saved: &Option<ServerName>,
+    current: *const c_char,
+) -> Result<(), SessionError> {
+    let current_bytes: Option<&[u8]> = if current.is_null() {
+        None
+    } else {
+        // SAFETY: a non-null hostname pointer read from `mbedtls_ssl_context`
+        // is a heap-allocated, nul-terminated string owned by the SSL context.
+        // The borrow only lives for the synchronous byte comparison below.
+        Some(unsafe { CStr::from_ptr(current) }.to_bytes_with_nul())
+    };
+    let saved_bytes = saved.as_ref().map(|n| n.as_bytes());
+
+    if current_bytes == saved_bytes {
+        Ok(())
+    } else {
+        Err(SessionError::MbedTls(MbedtlsError::new(
+            MBEDTLS_ERR_SSL_BAD_INPUT_DATA,
+        )))
+    }
 }
 
 /// Certificate verification mode used for a session
@@ -325,10 +412,8 @@ impl<'a> SessionState<'a> {
         merr!(unsafe { mbedtls_ssl_setup(&mut *ssl_context, &*ssl_config) })?;
 
         if let SessionConfig::Client(conf) = conf {
-            if let Some(server_name) = conf.server_name {
-                merr!(unsafe {
-                    mbedtls_ssl_set_hostname(&mut *ssl_context, server_name.as_ptr())
-                })?;
+            if let Some(name) = conf.server_name {
+                merr!(unsafe { mbedtls_ssl_set_hostname(&mut *ssl_context, name.as_ptr()) })?;
             }
         }
 
