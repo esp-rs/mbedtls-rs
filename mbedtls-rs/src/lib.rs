@@ -43,7 +43,24 @@ pub mod sys {
     pub use mbedtls_rs_sys::*;
 }
 
-static RNG: Mutex<RefCell<Option<&mut (dyn CryptoRng + Send)>>> = Mutex::new(RefCell::new(None));
+/// An erased pointer to the user-provided RNG, stored in the global [`RNG`].
+///
+/// The RNG is stored as a raw `NonNull` rather than a reference: a pointer
+/// makes no aliasing/validity claim, and the `&mut` is materialized only inside
+/// the `mbedtls_rng` callback. [`Tls::new`] takes a `&'static mut`, so its
+/// stored pointer is always valid. [`Tls::new_local_borrows`] takes a shorter
+/// `&'d mut` and is `unsafe` precisely because of this slot: if that borrow ends
+/// while the pointer is still installed (only reachable by leaking the `Tls`),
+/// a later callback dereference would be UB. See `new_local_borrows`' safety
+/// contract.
+struct RngPtr(NonNull<dyn CryptoRng + Send>);
+
+// SAFETY: the pointee is `Send` (the trait object bound), and all access is
+// serialized through the `critical_section` `Mutex` below. The pointer is set
+// from a live `&mut` in a `Tls` constructor and cleared in `Tls::drop`.
+unsafe impl Send for RngPtr {}
+
+static RNG: Mutex<RefCell<Option<RngPtr>>> = Mutex::new(RefCell::new(None));
 
 /// An error returned when creating a `Tls` instance
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
@@ -58,25 +75,69 @@ pub enum TlsError {
 /// Only one such instance can be active at any point in time.
 pub struct Tls<'d>(PhantomData<&'d mut ()>);
 
-impl<'d> Tls<'d> {
-    /// Create a new instance of the `Tls` type.
+impl Tls<'static> {
+    /// Create a new instance of the `Tls` type from a `'static` RNG.
     ///
-    /// Note that there could be only one active `Tls` instance at any point in time,
-    /// and the function will return an error if there is already an active instance.
-    pub fn new(rng: &'d mut (dyn CryptoRng + Send)) -> Result<Self, TlsError> {
-        critical_section::with(|cs| {
-            let created = RNG.borrow(cs).borrow().is_some();
+    /// Note that there could be only one active `Tls` instance at any point in
+    /// time, and the function will return an error if there is already an active
+    /// instance.
+    ///
+    /// This is safe because the RNG borrow is `'static`: it stays valid for the
+    /// rest of the program, so even leaking the returned `Tls` (e.g. via
+    /// `core::mem::forget`) cannot leave the global RNG slot dangling. For a
+    /// shorter-lived borrow, see [`Tls::new_local_borrows`].
+    pub fn new(rng: &'static mut (dyn CryptoRng + Send)) -> Result<Self, TlsError> {
+        // No `unsafe`: a `&'static mut` is already valid for the program's
+        // lifetime, so `NonNull::from` erases nothing the caller could invalidate.
+        Self::store_rng(NonNull::from(rng))
+    }
+}
 
-            if created {
+impl<'d> Tls<'d> {
+    /// Create a new instance of the `Tls` type from a non-`'static` RNG.
+    ///
+    /// Note that there could be only one active `Tls` instance at any point in
+    /// time, and the function will return an error if there is already an active
+    /// instance.
+    ///
+    /// Prefer [`Tls::new`] with a `'static` RNG where possible; this variant
+    /// exists for borrowed RNGs (e.g. a hardware TRNG peripheral) that cannot be
+    /// `'static`.
+    ///
+    /// # Safety
+    /// The RNG is stored behind a lifetime-erased pointer for as long as the
+    /// global RNG slot is installed (until this `Tls` is dropped). The caller
+    /// must ensure the returned `Tls` is dropped - NOT leaked via
+    /// `core::mem::forget` / `ManuallyDrop` - before `rng`'s borrow ends, and
+    /// must not combine a leaked `Tls` with direct calls into the raw
+    /// `mbedtls-rs-sys` RNG/PSA bindings; otherwise a later callback may
+    /// dereference a dangling pointer. Using only the safe `Session` API upholds
+    /// this automatically (a `Session` keeps the `Tls` alive via `TlsReference`).
+    pub unsafe fn new_local_borrows(rng: &'d mut (dyn CryptoRng + Send)) -> Result<Self, TlsError> {
+        // SAFETY: erase only the pointee lifetime on a *pointer* (ptr -> ptr, no
+        // validity claim); the caller upholds the no-leak contract documented
+        // above. The transmute preserves the data pointer and vtable.
+        let rng = unsafe {
+            core::mem::transmute::<NonNull<dyn CryptoRng + Send + '_>, NonNull<dyn CryptoRng + Send>>(
+                NonNull::from(rng),
+            )
+        };
+        Self::store_rng(rng)
+    }
+}
+
+impl<'d> Tls<'d> {
+    /// Install the erased RNG pointer into the global slot, enforcing the
+    /// single-active-instance invariant. Safe: storing a `NonNull` asserts
+    /// nothing about the pointee; validity is the contract of whichever
+    /// constructor produced the pointer.
+    fn store_rng(rng: NonNull<dyn CryptoRng + Send>) -> Result<Self, TlsError> {
+        critical_section::with(|cs| {
+            if RNG.borrow(cs).borrow().is_some() {
                 return Err(TlsError::AlreadyCreated);
             }
 
-            *RNG.borrow(cs).borrow_mut() = Some(unsafe {
-                core::mem::transmute::<
-                    &'d mut (dyn CryptoRng + Send),
-                    &'static mut (dyn CryptoRng + Send),
-                >(rng)
-            });
+            *RNG.borrow(cs).borrow_mut() = Some(RngPtr(rng));
 
             Ok(Self(PhantomData))
         })
@@ -460,15 +521,37 @@ pub(crate) unsafe extern "C" fn mbedtls_rng(
     buf: *mut c_uchar,
     len: usize,
 ) -> c_int {
-    let buf = core::slice::from_raw_parts_mut(buf, len as _);
+    use crate::sys::MBEDTLS_ERR_CTR_DRBG_ENTROPY_SOURCE_FAILED;
+
+    if len == 0 {
+        return 0;
+    }
+    if buf.is_null() {
+        return MBEDTLS_ERR_CTR_DRBG_ENTROPY_SOURCE_FAILED;
+    }
+
+    let buf = core::slice::from_raw_parts_mut(buf, len);
 
     critical_section::with(|cs| {
-        let mut rng = RNG.borrow(cs).borrow_mut();
-
-        rng.as_mut().unwrap().fill_bytes(buf);
-    });
-
-    0
+        match RNG.borrow(cs).borrow_mut().as_mut() {
+            // SAFETY: the pointer was set from a live `&mut` in a `Tls`
+            // constructor (`store_rng`) and is cleared in `Tls::drop`, so on the
+            // normal path (a live `Tls`) it is valid; access is serialized by the
+            // surrounding `Mutex`. The one unsound path is a leaked `Tls` created
+            // via `new_local_borrows` (see `RngPtr`): if the owner did
+            // `mem::forget` and dropped the RNG, this slot is stale. That is a
+            // caller contract, not something this callback can detect.
+            Some(rng) => {
+                rng.0.as_mut().fill_bytes(buf);
+                0
+            }
+            // No `Tls` is active: report an entropy failure rather than panicking
+            // (the old `unwrap()` aborted out of this `extern "C"` callback). This
+            // path is reachable via `mbedtls_psa_external_get_random`, which the
+            // PSA layer can call with no live `Session`.
+            None => MBEDTLS_ERR_CTR_DRBG_ENTROPY_SOURCE_FAILED,
+        }
+    })
 }
 
 #[no_mangle]
@@ -478,8 +561,31 @@ unsafe extern "C" fn mbedtls_psa_external_get_random(
     out_size: usize,
     output_len: *mut usize,
 ) -> c_int {
-    *output_len = out_size;
-    mbedtls_rng(core::ptr::null_mut(), output, out_size)
+    // PSA status codes (`psa_status_t`). MbedTLS treats this hook's return as a
+    // PSA status, not an `MBEDTLS_ERR_*` code, and the generated bindings do not
+    // expose the `PSA_*` macros, so they are defined locally here.
+    const PSA_SUCCESS: c_int = 0;
+    const PSA_ERROR_INSUFFICIENT_ENTROPY: c_int = -148;
+    const PSA_ERROR_INVALID_ARGUMENT: c_int = -135;
+
+    if output_len.is_null() {
+        return PSA_ERROR_INVALID_ARGUMENT;
+    }
+    // A zero-size request may legitimately pass a null `output`.
+    if output.is_null() && out_size != 0 {
+        return PSA_ERROR_INVALID_ARGUMENT;
+    }
+    if out_size == 0 {
+        *output_len = 0;
+        return PSA_SUCCESS;
+    }
+
+    if mbedtls_rng(core::ptr::null_mut(), output, out_size) == 0 {
+        *output_len = out_size;
+        PSA_SUCCESS
+    } else {
+        PSA_ERROR_INSUFFICIENT_ENTROPY
+    }
 }
 
 #[cfg(target_os = "espidf")]
