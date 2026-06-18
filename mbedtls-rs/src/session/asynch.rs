@@ -45,6 +45,13 @@ where
     read_byte: Option<u8>,
     /// A state necessary so as to implement `MBio::writable`
     write_byte: Option<u8>,
+    /// `true` while MbedTLS holds an undrained outgoing record (it returned
+    /// `WANT_WRITE` and a matching `mbedtls_ssl_write` has not yet returned
+    /// `>= 0`). If a `write` future is dropped at that point, this survives so
+    /// the next `write`/`flush`/`close` can flush the pending record before
+    /// doing anything else - otherwise a later `write` with a different buffer
+    /// would flush the old record but report the new buffer's length.
+    write_in_flight: bool,
     /// Reference to the active Tls instance
     _token: TlsReference<'a>,
 }
@@ -74,6 +81,7 @@ where
             eof: false,
             read_byte: None,
             write_byte: None,
+            write_in_flight: false,
             _token: tls,
         })
     }
@@ -134,6 +142,8 @@ where
         Ok(())
     }
 
+    // NOT cancel-safe: drives the handshake across awaits after resetting the
+    // SSL context; see `Session::connect`'s `# Cancel safety`.
     async fn connect_internal(
         &mut self,
         saved_session: Option<&SavedSession>,
@@ -166,6 +176,14 @@ where
     ///
     /// Note that calling it is not mandatory, because the TLS session is anyway
     /// negotiated during the first read or write operation, or when splitting the session.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe. The handshake resets the SSL context (`mbedtls_ssl_session_reset`)
+    /// before driving it across multiple `.await` points; if this future is dropped
+    /// mid-handshake, the local TLS state is left partway through a handshake the peer may
+    /// have advanced, and a retry can reset it out from under the peer.
+    // NOT cancel-safe: see `# Cancel safety`.
     pub async fn connect(&mut self) -> Result<(), SessionError> {
         self.connect_internal(None).await
     }
@@ -173,6 +191,11 @@ where
     /// Negotiate the TLS connection attempting to reuse a previously captured session.
     ///
     /// Use [`Session::save`] to get a copy of the session to use here  
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe. Same as [`Session::connect`].
+    // NOT cancel-safe: see `# Cancel safety`.
     pub async fn connect_with_session(
         &mut self,
         saved_session: &SavedSession,
@@ -184,6 +207,13 @@ where
     ///
     /// # Returns
     /// - A tuple containing the read and write halves of the session
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe. This negotiates the connection first (see
+    /// [`Session::connect`]); once connected the split itself has no further
+    /// `.await` points.
+    // NOT cancel-safe: see `# Cancel safety`.
     pub async fn split(
         &mut self,
     ) -> Result<
@@ -211,6 +241,7 @@ where
                 eof: &mut self.eof,
                 read_byte: &mut self.read_byte,
                 write_byte: None,
+                write_in_flight: false,
             },
             SessionWrite {
                 stream: NoRead(write),
@@ -218,6 +249,7 @@ where
                 eof: false,
                 read_byte: None,
                 write_byte: &mut self.write_byte,
+                write_in_flight: &mut self.write_in_flight,
             },
         ))
     }
@@ -229,6 +261,15 @@ where
     ///
     /// # Returns
     /// - The number of bytes read or an error
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe. This drives MbedTLS across multiple `.await` points. A
+    /// dropped read does not lose application data (a buffered transport byte is
+    /// kept, and bytes already consumed by MbedTLS live in the SSL context), but
+    /// it can leave partial TLS input/record state, so re-issuing is not
+    /// side-effect-free.
+    // NOT cancel-safe: see `# Cancel safety`.
     pub async fn read(&mut self, buf: &mut [u8]) -> Result<usize, SessionError> {
         self.connect().await?;
 
@@ -246,6 +287,17 @@ where
     ///
     /// # Returns:
     /// - The number of bytes written or an error
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe, but never misreports. If this future is dropped after
+    /// MbedTLS has buffered part of `data` into a record (an internal
+    /// `WANT_WRITE`), that record may be partially on the wire, so the write is
+    /// not side-effect-free. However the accounting stays correct: the next
+    /// `write`/`flush`/`close` first finishes sending that pending record (it is
+    /// never attributed to the next call's buffer), so re-issuing with a
+    /// *different* buffer is safe and returns only that buffer's own byte count.
+    // NOT cancel-safe: see `# Cancel safety`.
     pub async fn write(&mut self, data: &[u8]) -> Result<usize, SessionError> {
         self.connect().await?;
 
@@ -262,6 +314,14 @@ where
     ///
     /// # Returns:
     /// - An error if the flush failed
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe. A dropped flush may leave a queued transport byte unsent
+    /// or the underlying stream only partially flushed, so it is not
+    /// side-effect-free; re-flushing is generally fine if the underlying `Write`
+    /// is well-behaved.
+    // NOT cancel-safe: see `# Cancel safety`.
     pub async fn flush(&mut self) -> Result<(), SessionError> {
         self.connect().await?;
 
@@ -274,6 +334,12 @@ where
     ///
     /// # Returns:
     /// - An error if the close failed
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe. Sends the close-notify alert and flushes; a drop may
+    /// leave the alert partially sent.
+    // NOT cancel-safe: see `# Cancel safety`.
     pub async fn close(&mut self) -> Result<(), SessionError> {
         if !self.connected {
             return Ok(());
@@ -338,6 +404,7 @@ impl<T> Read for Session<'_, T>
 where
     T: Read + Write,
 {
+    // NOT cancel-safe: forwards to `Session::read`; see its `# Cancel safety`.
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         Self::read(self, buf).await
     }
@@ -347,10 +414,12 @@ impl<T> Write for Session<'_, T>
 where
     T: Read + Write,
 {
+    // NOT cancel-safe: forwards to `Session::write`; see its `# Cancel safety`.
     async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         Self::write(self, buf).await
     }
 
+    // NOT cancel-safe: forwards to `Session::flush`; see its `# Cancel safety`.
     async fn flush(&mut self) -> Result<(), Self::Error> {
         Self::flush(self).await
     }
@@ -411,12 +480,27 @@ where
     read_byte: &'a mut Option<u8>,
     /// A state necessary so as to implement `MBio::wait_writable`
     write_byte: Option<u8>,
+    /// A dummy value, as the read half never drives an outgoing record.
+    write_in_flight: bool,
 }
 
 impl<T> SessionRead<'_, T>
 where
     T: Read,
 {
+    /// Read unencrypted data from the read half of the TLS connection.
+    ///
+    /// # Cancel safety
+    ///
+    /// Cancel-safe. The TLS handshake has already completed by the time
+    /// [`Session::split`] could produce this half, so this method only drives
+    /// MbedTLS's data-read loop with no handshake `.await` points. All partial
+    /// state (a buffered transport byte and MbedTLS's own record state) lives
+    /// on the read half, not in the future, so a drop strands nothing and the
+    /// next call resumes from where the previous one left off. (Unlike
+    /// [`Session::read`], which calls [`Session::connect`] on first use and
+    /// inherits its handshake cancellation hazard.)
+    // cancel-safe: see `# Cancel safety`.
     pub async fn read(&mut self, buf: &mut [u8]) -> Result<usize, SessionError> {
         if *self.eof || buf.is_empty() {
             return Ok(0);
@@ -437,6 +521,7 @@ impl<T> Read for SessionRead<'_, T>
 where
     T: Read,
 {
+    // cancel-safe: forwards to `SessionRead::read`; see its `# Cancel safety`.
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         Self::read(self, buf).await
     }
@@ -458,6 +543,9 @@ where
     read_byte: Option<u8>,
     /// A state necessary so as to implement `MBio::wait_writable`
     write_byte: &'a mut Option<u8>,
+    /// Pending-outgoing-record guard borrowed from the owning `Session`; see
+    /// `Session::write_in_flight`.
+    write_in_flight: &'a mut bool,
 }
 
 impl<T> SessionWrite<'_, T>
@@ -471,6 +559,13 @@ where
     ///
     /// # Returns
     /// - The number of bytes written or an error
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe, but never misreports. Same as [`Session::write`]: a
+    /// dropped write may leave a partially-sent record, but the next write
+    /// finishes it first and reports only its own buffer's byte count.
+    // NOT cancel-safe: see `# Cancel safety`.
     pub async fn write(&mut self, data: &[u8]) -> Result<usize, SessionError> {
         if data.is_empty() {
             return Ok(0);
@@ -480,6 +575,11 @@ where
     }
 
     /// Flush the TLS connection
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe. Same as [`Session::flush`].
+    // NOT cancel-safe: see `# Cancel safety`.
     pub async fn flush(&mut self) -> Result<(), SessionError> {
         MBio::from_write(self).flush().await
     }
@@ -496,10 +596,12 @@ impl<T> Write for SessionWrite<'_, T>
 where
     T: Write,
 {
+    // NOT cancel-safe: forwards to `SessionWrite::write`; see its `# Cancel safety`.
     async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         Self::write(self, buf).await
     }
 
+    // NOT cancel-safe: forwards to `SessionWrite::flush`; see its `# Cancel safety`.
     async fn flush(&mut self) -> Result<(), Self::Error> {
         Self::flush(self).await
     }
@@ -546,6 +648,8 @@ struct MBio<'a, T> {
     read_byte: &'a mut Option<u8>,
     /// A state necessary so as to implement `MBio::wait_writable`
     write_byte: &'a mut Option<u8>,
+    /// Pending-outgoing-record guard; see `Session::write_in_flight`.
+    write_in_flight: &'a mut bool,
 }
 
 impl<'a, T> MBio<'a, &'a mut T>
@@ -562,6 +666,7 @@ where
             &mut session.eof,
             &mut session.read_byte,
             &mut session.write_byte,
+            &mut session.write_in_flight,
         )
     }
 }
@@ -577,6 +682,7 @@ where
             session.eof,
             session.read_byte,
             &mut session.write_byte,
+            &mut session.write_in_flight,
         )
     }
 }
@@ -592,6 +698,7 @@ where
             &mut session.eof,
             &mut session.read_byte,
             session.write_byte,
+            session.write_in_flight,
         )
     }
 }
@@ -606,6 +713,7 @@ where
         eof: &'a mut bool,
         read_byte: &'a mut Option<u8>,
         write_byte: &'a mut Option<u8>,
+        write_in_flight: &'a mut bool,
     ) -> Self {
         Self {
             stream,
@@ -613,10 +721,12 @@ where
             eof,
             read_byte,
             write_byte,
+            write_in_flight,
         }
     }
 
     /// Establish the SSL connection
+    // NOT cancel-safe: see `Session::connect`'s `# Cancel safety`.
     async fn connect(&mut self, saved_session: Option<&SavedSession>) -> Result<(), SessionError> {
         debug!("Establishing SSL connection");
 
@@ -660,6 +770,10 @@ where
     ///
     /// # Returns
     /// - The number of bytes read or an error
+    // cancel-safe: the only `.await` is `wait_readable`, whose partial state
+    // lives on the read half (`read_byte`, MbedTLS's record state), not in the
+    // future. `Session::read` is unsafe only via its preceding `connect()`
+    // call, not because of this primitive.
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, SessionError> {
         loop {
             match self
@@ -694,11 +808,57 @@ where
     ///
     /// Returns:
     /// - The number of bytes written or an error
+    // NOT cancel-safe: see `Session::write`'s `# Cancel safety`.
     async fn write(&mut self, data: &[u8]) -> Result<usize, SessionError> {
+        // If a previous write was dropped mid-record, finish sending that record
+        // before touching `data`, so its bytes are never attributed to `data`.
+        self.drain_pending().await?;
+
         loop {
             match self
                 .call_mbedtls(|ssl_ctx| unsafe {
                     mbedtls_ssl_write(ssl_ctx, data.as_ptr() as *const _, data.len() as _)
+                })
+                .await
+            {
+                MBEDTLS_ERR_SSL_WANT_WRITE => {
+                    *self.write_in_flight = true;
+                    if !self.wait_writable().await.map_err(SessionError::from_io)? {
+                        return Err(SessionError::Io(ErrorKind::ConnectionReset));
+                    }
+                }
+                // See https://github.com/Mbed-TLS/mbedtls/issues/8749
+                MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET => continue,
+                other => {
+                    let len = merr!(other)?;
+                    *self.write_in_flight = false;
+                    break Ok(len as usize);
+                }
+            }
+        }
+    }
+
+    /// Finish sending a TLS record that MbedTLS still holds from an interrupted
+    /// write (`write_in_flight`), without writing any new application data.
+    ///
+    /// A zero-length `mbedtls_ssl_write` re-enters MbedTLS's flush-output path
+    /// when `out_left != 0` (the only public way to do so), ignoring the buffer
+    /// and returning 0 once drained. It is guarded by `write_in_flight` because
+    /// a zero-length write on an idle context would instead emit an empty TLS
+    /// application record.
+    // NOT cancel-safe: drives the pending record across awaits; a drop leaves
+    // `write_in_flight` set so the next call resumes the drain.
+    async fn drain_pending(&mut self) -> Result<(), SessionError> {
+        if !*self.write_in_flight {
+            return Ok(());
+        }
+
+        let dummy = [0u8; 1];
+
+        loop {
+            match self
+                .call_mbedtls(|ssl_ctx| unsafe {
+                    mbedtls_ssl_write(ssl_ctx, dummy.as_ptr() as *const _, 0)
                 })
                 .await
             {
@@ -710,8 +870,11 @@ where
                 // See https://github.com/Mbed-TLS/mbedtls/issues/8749
                 MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET => continue,
                 other => {
-                    let len = merr!(other)?;
-                    break Ok(len as usize);
+                    // Any non-negative return means the pending record drained; a
+                    // negative one is propagated as an error by `merr!`.
+                    let _ = merr!(other)?;
+                    *self.write_in_flight = false;
+                    break Ok(());
                 }
             }
         }
@@ -719,7 +882,12 @@ where
 
     /// Flush the TLS connection by writing any outstanding data to the underlying stream
     /// and then flushing the stream
+    // NOT cancel-safe: see `Session::flush`'s `# Cancel safety`.
     async fn flush(&mut self) -> Result<(), SessionError> {
+        // Push any record MbedTLS still holds, then the byte staged by
+        // `wait_writable`, before flushing the transport.
+        self.drain_pending().await?;
+
         if !self.wait_writable().await.map_err(SessionError::from_io)? {
             return Err(SessionError::Io(ErrorKind::ConnectionReset));
         }
@@ -728,7 +896,12 @@ where
     }
 
     /// Close the TLS connection by sending the "close notify" alert to the peer and flushing the stream
+    // NOT cancel-safe: see `Session::close`'s `# Cancel safety`.
     pub async fn close(&mut self) -> Result<(), SessionError> {
+        // Drain any pending application record first; otherwise close-notify can
+        // merely flush that record and report success without being queued.
+        self.drain_pending().await?;
+
         merr!(
             self.call_mbedtls(|ssl| unsafe { mbedtls_ssl_close_notify(ssl) })
                 .await
@@ -746,6 +919,8 @@ where
     ///
     /// Return `Ok(true)` if the stream is readable, `Ok(false)` if EOF is reached,
     /// or an error otherwise.
+    // NOT cancel-safe: a buffered byte may be left in `read_byte`; see
+    // `Session::read`'s `# Cancel safety`.
     async fn wait_readable(&mut self) -> Result<bool, T::Error> {
         if self.read_byte.is_none() {
             let mut buf = [0u8; 1];
@@ -767,6 +942,8 @@ where
     ///
     /// Return `Ok(true)` if the stream is writable (or there is no byte to write), `Ok(false)` if EOF is reached,
     /// or an error otherwise.
+    // NOT cancel-safe: a queued byte may be left in `write_byte`; see
+    // `Session::write`'s `# Cancel safety`.
     async fn wait_writable(&mut self) -> Result<bool, T::Error> {
         if let Some(byte) = self.write_byte.as_ref() {
             let len = self.stream.write(&[*byte]).await?;
@@ -782,6 +959,8 @@ where
 
     /// Call an MbedTLS function with the proper BIO callbacks set
     /// and with a proper context for the async operations on the underlying stream
+    // NOT cancel-safe: each poll advances MbedTLS's internal state; callers drive
+    // it in a loop and must observe the same-arguments retry contract.
     async fn call_mbedtls<F>(&mut self, mut f: F) -> i32
     where
         F: FnMut(*mut mbedtls_ssl_context) -> i32,
@@ -963,6 +1142,7 @@ impl<T> Read for NoRead<T>
 where
     T: ErrorType,
 {
+    // NOT cancel-safe: unreachable (this is the write-only half's `Read`).
     async fn read(&mut self, _buf: &mut [u8]) -> Result<usize, Self::Error> {
         unreachable!()
     }
@@ -972,10 +1152,14 @@ impl<T> Write for NoRead<T>
 where
     T: Write,
 {
+    // cancel-safe: forwards directly to the underlying stream's `write`; inherits
+    // its cancel safety.
     async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         self.0.write(buf).await
     }
 
+    // cancel-safe: forwards directly to the underlying stream's `flush`; inherits
+    // its cancel safety.
     async fn flush(&mut self) -> Result<(), Self::Error> {
         self.0.flush().await
     }
@@ -1003,6 +1187,8 @@ impl<T> Read for NoWrite<T>
 where
     T: Read,
 {
+    // cancel-safe: forwards directly to the underlying stream's `read`; inherits
+    // its cancel safety.
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         self.0.read(buf).await
     }
@@ -1012,10 +1198,12 @@ impl<T> Write for NoWrite<T>
 where
     T: ErrorType,
 {
+    // NOT cancel-safe: unreachable (this is the read-only half's `Write`).
     async fn write(&mut self, _buf: &[u8]) -> Result<usize, Self::Error> {
         unreachable!()
     }
 
+    // NOT cancel-safe: unreachable (this is the read-only half's `Write`).
     async fn flush(&mut self) -> Result<(), Self::Error> {
         unreachable!()
     }
