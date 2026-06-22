@@ -176,7 +176,20 @@ unsafe fn digest_init<T: WorkArea>(algo: &dyn MbedtlsDigest, memory: *mut T) {
 #[allow(unused)]
 #[inline(always)]
 unsafe fn digest_free<T: WorkArea>(algo: &dyn MbedtlsDigest, memory: *mut T) {
-    algo.free(memory.as_mut().unwrap().memory_mut());
+    // MbedTLS upstream contract: `mbedtls_*_free(NULL)` is explicitly documented
+    // as valid (sha1.h:76-82, sha256.h, sha512.h: "ctx ... may be NULL, in which
+    // case this function returns immediately"). No current caller in MbedTLS 3.x
+    // actually passes NULL: `mbedtls_md_free` (md.c:282) NULL-checks `ctx->md_ctx`
+    // before dispatch, PSA hash code passes `&operation->ctx` (struct field), and
+    // the SHA self-tests pass `&ctx` (stack variable). The contract is forward-
+    // compatible / defensive: when our `MBEDTLS_SHA*_ALT` hook replaces the
+    // upstream implementation, any future caller that elects to pass NULL through
+    // would land here, and panicking across the FFI boundary is strictly worse
+    // than the documented no-op.
+    let Some(memory) = memory.as_mut() else {
+        return;
+    };
+    algo.free(memory.memory_mut());
 }
 
 #[allow(unused)]
