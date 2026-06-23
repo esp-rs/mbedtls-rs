@@ -18,7 +18,7 @@ harness = false
 # `matter`) or any individual `alg-*`/`curve-*`/`cipher-mode-*`/`kex-*`/... leaf below.
 # Even with `default-features = false` and no bundle, a minimal non-negotiable floor
 # (see the `mbedtls-rs-sys` dependency below) keeps this crate compiling.
-default = ["edge-nal", "tls"]
+default = ["tls"]
 defmt = ["dep:defmt", "mbedtls-rs-sys/defmt"]
 log = ["dep:log", "mbedtls-rs-sys/log"]
 
@@ -177,4 +177,3 @@ embedded-io-async = { version = "0.7" }
 enumset = { version = "1", default-features = false }
 rand_core = "0.10.1"
 critical-section = "1"
-edge-nal = { version = "0.6", optional = true }
