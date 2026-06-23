@@ -16,11 +16,8 @@ opt-level = "z"
 
 [dependencies]
 log = "0.4"
-mbedtls-rs = { path = "../../mbedtls-rs", features = ["log", "edge-nal"] }
+mbedtls-rs = { path = "../../mbedtls-rs", features = ["log"] }
 enumset = { version = "1", default-features = false }
-
-# For the `edge_*` examples
-edge-http = { version = "0.7", features = ["io"] }
 
 # STD-only dependencies
 rand = "0.10"
@@ -29,7 +26,6 @@ embedded-io-adapters = { version = "0.7", features = ["std", "futures-03"] }
 async-io-mini = "0.4"
 async-executor = "1"
 embassy-time = { version = "0.5", features = ["std", "generic-queue-64"] }
-edge-nal-std = { version = "0.6", features = ["async-io-mini"] }
 futures-lite = "1"
 
 [target.'cfg(not(target_os = "espidf"))'.dependencies]

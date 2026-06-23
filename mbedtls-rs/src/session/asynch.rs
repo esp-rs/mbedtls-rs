@@ -21,13 +21,6 @@ pub mod io {
     pub use embedded_io_async::*;
 }
 
-/// Re-export of the `edge-nal` crate so that users don't have to explicitly depend on it
-/// to use e.g. `TlsAccept` and `TlsConnect` methods.
-#[cfg(feature = "edge-nal")]
-pub mod nal {
-    pub use edge_nal::*;
-}
-
 /// An async TLS session over a stream represented by `embedded-io-async`'s `Read` and `Write` traits.
 pub struct Session<'a, T>
 where
