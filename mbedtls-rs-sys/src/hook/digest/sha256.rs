@@ -10,7 +10,7 @@ pub trait MbedtlsSha224: MbedtlsDigest {}
 impl<T: Deref> MbedtlsSha256 for T where T::Target: MbedtlsSha256 {}
 impl<T: Deref> MbedtlsSha224 for T where T::Target: MbedtlsSha224 {}
 
-/// Hook the SHA1 implementation used by MbedTLS
+/// Hook the SHA-256 implementation used by MbedTLS
 ///
 /// # Safety
 /// - This function is unsafe because it modifies global state that affects
@@ -117,6 +117,13 @@ mod alt {
 
     #[no_mangle]
     unsafe extern "C" fn mbedtls_sha256_free(ctx: *mut mbedtls_sha256_context) {
+        // MbedTLS contract: `mbedtls_sha256_free(NULL)` is documented as valid
+        // (see `digest_free` in `mbedtls-rs-sys/src/hook/digest.rs` for the
+        // full call-path rationale). Null-check before `algo(ctx)` because that
+        // helper dereferences `ctx` to read `is224`.
+        if ctx.is_null() {
+            return;
+        }
         digest_free(algo(ctx), ctx);
     }
 

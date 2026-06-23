@@ -117,6 +117,13 @@ mod alt {
 
     #[no_mangle]
     unsafe extern "C" fn mbedtls_sha512_free(ctx: *mut mbedtls_sha512_context) {
+        // MbedTLS contract: `mbedtls_sha512_free(NULL)` is documented as valid
+        // (see `digest_free` in `mbedtls-rs-sys/src/hook/digest.rs` for the
+        // full call-path rationale). Null-check before `algo(ctx)` because that
+        // helper dereferences `ctx` to read `is384`.
+        if ctx.is_null() {
+            return;
+        }
         digest_free(algo(ctx), ctx);
     }
 
