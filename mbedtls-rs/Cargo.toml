@@ -161,7 +161,7 @@ embassy-time = ["mbedtls-rs-sys/embassy-time"]
 # under `--no-default-features` (a coherent minimal EC TLS 1.2/1.3 stack: the SSL
 # engine, X.509 + PK + PEM parse, ECDHE-ECDSA over P-256, AES-GCM, SHA-256, HKDF,
 # CTR-DRBG + entropy). Consumer-selected bundles/leaves are unioned on top.
-mbedtls-rs-sys = { path = "../mbedtls-rs-sys", default-features = false, features = [
+mbedtls-rs-sys = { workspace = true, default-features = false, features = [
     "tls-engine", "tls-core", "tls-client", "tls-server",
     "tls-proto-tls12", "tls-proto-tls13",
     "kex-ecdhe-ecdsa",
@@ -170,10 +170,10 @@ mbedtls-rs-sys = { path = "../mbedtls-rs-sys", default-features = false, feature
     "curve-secp256r1",
     "drbg-ctr", "entropy", "base64", "pem-parse", "x509-parse",
 ] }
-defmt = { version = "1", optional = true }
-log = { version = "0.4", default-features = false, optional = true }
-embedded-io = { version = "0.7" }
-embedded-io-async = { version = "0.7" }
-enumset = { version = "1", default-features = false }
-rand_core = "0.10.1"
-critical-section = "1"
+defmt = { workspace = true, optional = true }
+log = { workspace = true, default-features = false, optional = true }
+embedded-io = { workspace = true }
+embedded-io-async = { workspace = true }
+enumset = { workspace = true, default-features = false }
+rand_core = { workspace = true }
+critical-section = { workspace = true }
