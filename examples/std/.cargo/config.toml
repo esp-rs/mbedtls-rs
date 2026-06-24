@@ -2,3 +2,6 @@
 runner = "espflash flash --baud 921600 --monitor"
 linker = "ldproxy"
 rustflags = ["--cfg", "espidf_time64"]
+
+[env]
+RUST_LOG="info"
