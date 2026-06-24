@@ -511,6 +511,12 @@ impl CMakeConfigurer {
         let mut config = Config::new(&self.project_path);
 
         config
+            // MbedTLS's CMake build runs Python helper scripts (e.g. to locate the
+            // `framework` directory). Python writes `__pycache__/*.pyc` caches next
+            // to those scripts, i.e. inside the crate source tree. `cargo publish`
+            // verifies the extracted package was not modified by build.rs and aborts
+            // when it finds those stray `.pyc` files, so disable bytecode caching.
+            .env("PYTHONDONTWRITEBYTECODE", "1")
             // ... or else the build would fail with `arm-none-eabi-gcc` when testing the compiler
             .define("CMAKE_TRY_COMPILE_TARGET_TYPE", "STATIC_LIBRARY")
             .define("CMAKE_EXPORT_COMPILE_COMMANDS", "ON")
