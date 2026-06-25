@@ -8,6 +8,8 @@ rust-version = "1.84"
 description = "Raw Rust bindings of the MbedTLS library"
 repository = "https://github.com/esp-rs/mbedtls-rs"
 readme = "README.md"
+keywords = ["mbedtls", "tls", "embedded", "no-std", "ffi"]
+categories = ["cryptography", "embedded", "no-std", "external-ffi-bindings", "network-programming"]
 exclude = ["*.pyc", "mbedtls/framework", "mbedtls/programs", "mbedtls/tests"]
 
 [lib]

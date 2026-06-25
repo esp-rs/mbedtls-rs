@@ -7,6 +7,8 @@ rust-version = "1.84"
 description = "Rust library implementing transparent TLS encryption/decryption for IO streams with MbedTLS"
 repository = "https://github.com/esp-rs/mbedtls-rs"
 readme = "README.md"
+keywords = ["mbedtls", "tls", "ssl", "embedded", "no-std"]
+categories = ["cryptography", "embedded", "no-std", "network-programming"]
 
 [lib]
 harness = false
