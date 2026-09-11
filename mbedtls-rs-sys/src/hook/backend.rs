@@ -1,4 +1,4 @@
-#[cfg(feature = "embassy-time")]
+#[cfg(any(feature = "embassy-time", feature = "embassy-crypto"))]
 pub mod embassy;
 // Mounted without `esp-hal` too (under the internal `_route-test` feature) so
 // the pure-logic `esp::exp_mod_route` submodule can be unit tested on the

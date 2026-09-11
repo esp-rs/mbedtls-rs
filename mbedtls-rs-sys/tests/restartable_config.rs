@@ -1,7 +1,9 @@
 //! Configuration checks for the restartable-ECP feature mapping.
 
+#[allow(dead_code)]
 #[path = "../gen/config.rs"]
 mod config;
+#[allow(dead_code)]
 #[path = "../gen/features.rs"]
 mod features;
 

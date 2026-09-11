@@ -61,7 +61,12 @@ For that reason, `mbedtls-rs-sys` provides the so called Hooking mechanism, curr
 - The SHA-1, SHA-224/256 and SHA-384/512 digests (`hook_sha1`, `hook_sha224`, `hook_sha256`, `hook_sha384`, `hook_sha512`)
 - The AES block cipher, including all its cipher modes and everything MbedTLS builds on top of it - CCM, GCM, CMAC and CTR-DRBG (`hook_aes`)
 - The ECP scalar multiplication (`R = m * P`) and public-key (point-on-curve) check, through which all ECDH / ECDSA / ECJPAKE (and generic SPAKE2+-style protocol) math funnels (`hook_ecp_mul`, `hook_ecp_verify`)
+- ECDSA signing and verification (`hook_ecdsa`) and ECDH key pair generation and shared-secret computation (`hook_ecdh`), for engines that do these as a whole; un-hooked, MbedTLS computes them on top of the (possibly hooked) ECP scalar multiplication. Unavailable with the `ecp-restartable` feature
 - The MPI (bignum) modular exponentiation used by RSA and DHM (`hook_exp_mod`)
+
+Ready-made hook implementations live in `hook::backend`:
+- `esp` (`esp32*` features): the ESP32XX SHA, RSA, AES and ECC accelerators, via `esp-hal`
+- `embassy` (`embassy-crypto` feature): whatever [`embassy-crypto`](https://github.com/embassy-rs/embassy/tree/main/embassy-crypto) drivers the firmware registers, for SHA-1/224/256/384/512, AES-128/256, and the P-256/P-384 scalar multiplication, ECDSA and ECDH
 
 Besides the hardware-acceleration hooks above, two further hooks supply platform facilities that MbedTLS cannot obtain by itself on a baremetal target:
 - A monotonic timer, for DTLS retransmission timeouts (`hook_timer`, behind the `hook-timer` feature)
@@ -76,7 +81,7 @@ In essence Hooking relies on the "_ALT" functionality in MbedTLS and specificall
   - How the Rust HW accel implementation uses the sequence of bytes is up to the implementation, but the expectation is that it would emplace its own Rust type(s) in there, following the rules of Rust for proper memory allgnment; the `WorkArea` type provided by `mbedtls-rs-sys` provides helpers for that
 - There is a dyn-compatible trait for each hook (algorithm to be HW accelerated) provided by `mbedtls-rs-sys` that the Rust developer needs to implement. For e.g. SHA-1, the trait is called `MbedtlsSha1`. User is expected to call e.g. `hook_sha1(&'static dyn MbedtlsSha1)` with their own implementation early in their program initialization code
   - If `hook_XXX` is not called for a particular hook algorithm, MbedTLS would function just fine and would fallback to its own software implementation of the algorithm
-    - For hooks that replace a whole module (`MBEDTLS_SHA1_ALT`, `MBEDTLS_SHA256_ALT`, `MBEDTLS_SHA512_ALT`, `MBEDTLS_AES_ALT`) the "_ALT" macro functionality normally **completely erases** the original C software impl from the build. `mbedtls-rs-sys` keeps it by compiling those modules' source files with the "_ALT" switch off and every public symbol (context types included) renamed via `-D` macros to `mbedtls_*_soft_*`
+    - For hooks that replace a whole module (`MBEDTLS_SHA1_ALT`, `MBEDTLS_SHA256_ALT`, `MBEDTLS_SHA512_ALT`, `MBEDTLS_AES_ALT`) or its main functions (`MBEDTLS_ECDSA_SIGN_ALT`, `MBEDTLS_ECDSA_VERIFY_ALT`, `MBEDTLS_ECDH_GEN_PUBLIC_ALT`, `MBEDTLS_ECDH_COMPUTE_SHARED_ALT`) the "_ALT" macro functionality normally **completely erases** the original C software impl from the build. `mbedtls-rs-sys` keeps it by compiling those modules' source files with the "_ALT" switch off and every public symbol (context types included) renamed via `-D` macros to `mbedtls_*_soft_*`
     - Hardware implementations can reuse the software fallback as an escape hatch (e.g. `SoftAesState`, used by the ESP backend for key sizes the AES peripheral does not support)
 
 Finally, when hooking stateless algorithms that do their job with a single function call (like `mbedtls_mpi_mod_exp`), there is no notion of a "work area" as the crypto algorithm does not really have an externally-observable state, in that it finishes all its operation in one go.

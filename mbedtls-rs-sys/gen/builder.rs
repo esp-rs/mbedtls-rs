@@ -17,6 +17,8 @@ pub const DEFAULT_HOOKS: EnumSet<Hook> = enum_set!(
         | Hook::Aes
         | Hook::EcpMul
         | Hook::EcpVerify
+        | Hook::Ecdsa
+        | Hook::Ecdh
 );
 
 mod config;
@@ -40,6 +42,10 @@ pub enum Hook {
     EcpMul,
     /// ECP public key (point-on-curve) verification
     EcpVerify,
+    /// ECDSA signature generation and verification
+    Ecdsa,
+    /// ECDH key pair generation and shared secret computation
+    Ecdh,
     /// Timer support
     Timer,
     /// Wall clock support
@@ -75,28 +81,34 @@ impl Hook {
             Self::ExpMod => None,
             Self::EcpMul => None,
             Self::EcpVerify => None,
+            Self::Ecdsa => None,
+            Self::Ecdh => None,
             Self::Timer => None,
             Self::WallClock => None,
         }
     }
 
-    /// Returns the config identifier corresponding to this hook.
-    const fn config_ident(self) -> &'static str {
+    /// Returns the config identifiers corresponding to this hook: the options
+    /// it defines (without the `MBEDTLS_` prefix).
+    const fn config_idents(self) -> &'static [&'static str] {
         match self {
-            Self::Sha1 => "SHA1_ALT",
-            Self::Sha256 => "SHA256_ALT",
-            Self::Sha512 => "SHA512_ALT",
-            Self::ExpMod => "MPI_EXP_MOD_ALT_FALLBACK",
-            Self::Aes => "AES_ALT",
+            Self::Sha1 => &["SHA1_ALT"],
+            Self::Sha256 => &["SHA256_ALT"],
+            Self::Sha512 => &["SHA512_ALT"],
+            Self::ExpMod => &["MPI_EXP_MOD_ALT_FALLBACK"],
+            Self::Aes => &["AES_ALT"],
             // Espressif-fork hooks: defining only the `*_SOFT_FALLBACK` macro
             // renames the built-in implementation to a `*_soft` symbol (which
             // the Rust hook layer uses as its fallback) and expects the
             // primary symbol (`ecp_mul_restartable_internal` /
             // `mbedtls_ecp_check_pubkey`) to be provided externally.
-            Self::EcpMul => "ECP_MUL_ALT_SOFT_FALLBACK",
-            Self::EcpVerify => "ECP_VERIFY_ALT_SOFT_FALLBACK",
-            Self::Timer => "HAVE_TIME",
-            Self::WallClock => "HAVE_TIME_DATE",
+            Self::EcpMul => &["ECP_MUL_ALT_SOFT_FALLBACK"],
+            Self::EcpVerify => &["ECP_VERIFY_ALT_SOFT_FALLBACK"],
+            // These modules have one `_ALT` switch per replaceable function
+            Self::Ecdsa => &["ECDSA_SIGN_ALT", "ECDSA_VERIFY_ALT"],
+            Self::Ecdh => &["ECDH_GEN_PUBLIC_ALT", "ECDH_COMPUTE_SHARED_ALT"],
+            Self::Timer => &["HAVE_TIME"],
+            Self::WallClock => &["HAVE_TIME_DATE"],
         }
     }
 
@@ -109,7 +121,9 @@ impl Hook {
             | Self::ExpMod
             | Self::Aes
             | Self::EcpMul
-            | Self::EcpVerify => None,
+            | Self::EcpVerify
+            | Self::Ecdsa
+            | Self::Ecdh => None,
             Self::Timer => Some(vec![
                 // using a mbedtls prefix to ensure we don't have conflicting 'time' symbols on std
                 ("PLATFORM_STD_TIME", Value::from("mbedtls_sec_time")),
@@ -134,9 +148,9 @@ impl Hook {
         }
     }
 
-    /// The software fallback of a whole-module `_ALT` hook: the MbedTLS
-    /// source file whose built-in implementation is compiled (in addition to
-    /// being replaced) under `*_soft` symbol names.
+    /// The software fallback of an `_ALT` hook replacing a module (or some of
+    /// its functions): the MbedTLS source file whose built-in implementation
+    /// is compiled (in addition to being replaced) under `*_soft` symbol names.
     ///
     /// Hooks the Espressif fork already provides a `*_soft` rename for at the
     /// source level (`ExpMod`, `EcpMul`, `EcpVerify`) need nothing here.
@@ -144,7 +158,7 @@ impl Hook {
         match self {
             Self::Sha1 => Some(SoftFallback {
                 source: "sha1.c",
-                header: "mbedtls/sha1.h",
+                header: Some("mbedtls/sha1.h"),
                 tokens: &["sha1"],
                 symbols: &[
                     "mbedtls_sha1_context",
@@ -161,7 +175,7 @@ impl Hook {
             }),
             Self::Sha256 => Some(SoftFallback {
                 source: "sha256.c",
-                header: "mbedtls/sha256.h",
+                header: Some("mbedtls/sha256.h"),
                 tokens: &["sha256", "sha224"],
                 symbols: &[
                     "mbedtls_sha256_context",
@@ -179,7 +193,7 @@ impl Hook {
             }),
             Self::Sha512 => Some(SoftFallback {
                 source: "sha512.c",
-                header: "mbedtls/sha512.h",
+                header: Some("mbedtls/sha512.h"),
                 tokens: &["sha512", "sha384"],
                 symbols: &[
                     "mbedtls_sha512_context",
@@ -197,7 +211,7 @@ impl Hook {
             }),
             Self::Aes => Some(SoftFallback {
                 source: "aes.c",
-                header: "mbedtls/aes.h",
+                header: Some("mbedtls/aes.h"),
                 tokens: &["aes"],
                 symbols: &[
                     "mbedtls_aes_context",
@@ -222,20 +236,65 @@ impl Hook {
                     "mbedtls_aes_self_test",
                 ],
             }),
+            Self::Ecdsa => Some(SoftFallback {
+                source: "ecdsa.c",
+                header: None,
+                tokens: &["ecdsa"],
+                symbols: &[
+                    "mbedtls_ecdsa_can_do",
+                    "mbedtls_ecdsa_sign_restartable",
+                    "mbedtls_ecdsa_sign",
+                    "mbedtls_ecdsa_sign_det_restartable",
+                    "mbedtls_ecdsa_sign_det_ext",
+                    "mbedtls_ecdsa_verify_restartable",
+                    "mbedtls_ecdsa_verify",
+                    "mbedtls_ecdsa_write_signature_restartable",
+                    "mbedtls_ecdsa_write_signature",
+                    "mbedtls_ecdsa_read_signature",
+                    "mbedtls_ecdsa_read_signature_restartable",
+                    "mbedtls_ecdsa_genkey",
+                    "mbedtls_ecdsa_from_keypair",
+                    "mbedtls_ecdsa_init",
+                    "mbedtls_ecdsa_free",
+                    "mbedtls_ecdsa_restart_init",
+                    "mbedtls_ecdsa_restart_free",
+                ],
+            }),
+            Self::Ecdh => Some(SoftFallback {
+                source: "ecdh.c",
+                header: None,
+                tokens: &["ecdh"],
+                symbols: &[
+                    "mbedtls_ecdh_can_do",
+                    "mbedtls_ecdh_gen_public",
+                    "mbedtls_ecdh_compute_shared",
+                    "mbedtls_ecdh_init",
+                    "mbedtls_ecdh_setup",
+                    "mbedtls_ecdh_enable_restart",
+                    "mbedtls_ecdh_free",
+                    "mbedtls_ecdh_make_params",
+                    "mbedtls_ecdh_read_params",
+                    "mbedtls_ecdh_get_params",
+                    "mbedtls_ecdh_make_public",
+                    "mbedtls_ecdh_read_public",
+                    "mbedtls_ecdh_calc_secret",
+                    "mbedtls_ecdh_get_grp_id",
+                    "mbedtls_ecdh_grp_id",
+                ],
+            }),
             Self::ExpMod | Self::EcpMul | Self::EcpVerify | Self::Timer | Self::WallClock => None,
         }
     }
 
     fn apply_to_config(self, config: &mut MbedtlsUserConfig) {
-        if self.soft_fallback().is_some() {
-            // Whole-module `_ALT`: on for the library, off for the one
-            // translation unit that compiles the software fallback.
-            config.set(
-                self.config_ident(),
-                Value::unless_defined(SOFT_FALLBACK_TU_GUARD),
-            );
-        } else {
-            config.set(self.config_ident(), true);
+        for ident in self.config_idents() {
+            if self.soft_fallback().is_some() {
+                // `_ALT` with a software fallback: on for the library, off for
+                // the one translation unit that compiles the software fallback.
+                config.set(ident, Value::unless_defined(SOFT_FALLBACK_TU_GUARD));
+            } else {
+                config.set(ident, true);
+            }
         }
 
         if let Some(extra_idents) = self.extra_options() {
@@ -252,17 +311,18 @@ impl Hook {
 
         if let Some(work_area_size) = self.work_area_size() {
             // This is not relevant for MbedTLS itself, but our
-            // implementation needs to know the work area size.
-            let size_ident = format!("{}_WORK_AREA_SIZE", self.config_ident());
+            // implementation needs to know the work area size. (The hooks
+            // with a work area have a single `_ALT` switch.)
+            let size_ident = format!("{}_WORK_AREA_SIZE", self.config_idents()[0]);
             config.set(&size_ident, work_area_size.to_string());
         }
     }
 }
 
 /// The macro that marks a translation unit as compiling a software fallback:
-/// the user config leaves the whole-module `_ALT` switches undefined for it
-/// (see [`Hook::apply_to_config`]), so the MbedTLS source compiles its
-/// built-in implementation and context struct rather than nothing.
+/// the user config leaves the `_ALT` switches of the hooks with a software
+/// fallback undefined for it (see [`Hook::apply_to_config`]), so the MbedTLS
+/// source compiles its built-in implementation (and context struct).
 const SOFT_FALLBACK_TU_GUARD: &str = "MBEDTLS_RS_SOFT_FALLBACK_TU";
 
 /// Basename of the generated CMake snippet (see [`SoftFallback::cmake_snippet`]).
@@ -286,6 +346,11 @@ const SOFT_FALLBACK_HEADER: &str = "mbedtls_rs_sys_soft_fallback.h";
 /// The Rust fallback emplaces the (plain-old-data) soft context in the hook
 /// work area and forwards to the `*_soft` functions.
 ///
+/// Modules with one `_ALT` switch per replaceable function (ECDSA's
+/// `MBEDTLS_ECDSA_SIGN_ALT` / `MBEDTLS_ECDSA_VERIFY_ALT`, ECDH's) are handled
+/// the same way, with all the switches off for the second compilation. Their
+/// types do not depend on the switches, so only the functions are renamed.
+///
 /// This generalizes the `*_soft` rename the Espressif fork does at the
 /// source level for `mbedtls_mpi_exp_mod` and the ECP hooks, without
 /// patching the fork: the per-source treatment is injected into the fork's
@@ -300,11 +365,17 @@ const SOFT_FALLBACK_HEADER: &str = "mbedtls_rs_sys_soft_fallback.h";
 pub struct SoftFallback {
     /// The module's source file in `mbedtls/library/`
     source: &'static str,
-    /// The module's public header, as included from `include.h`
-    header: &'static str,
+    /// The module's public header, as included from `include.h`, through
+    /// which `bindgen` declares the `*_soft` symbols (see
+    /// [`SoftFallback::bindgen_header`]). `None` for modules whose header
+    /// cannot be included a second time, as it defines structs and enums the
+    /// renames do not cover (ECDH's); their hooks declare the few `*_soft`
+    /// functions they use themselves.
+    header: Option<&'static str>,
     /// The module name tokens after which `_soft` is inserted
     tokens: &'static [&'static str],
-    /// Every public symbol (functions and types) of the module
+    /// Every public symbol of the module: its functions, and the types that
+    /// depend on the `_ALT` switches
     symbols: &'static [&'static str],
 }
 
@@ -437,26 +508,37 @@ impl SoftFallback {
             let Some(soft) = hook.soft_fallback() else {
                 continue;
             };
+            let Some(header) = soft.header else {
+                continue;
+            };
 
-            let alt = format!("MBEDTLS_{}", hook.config_ident());
-            let guard = soft
-                .header
+            let alts = hook
+                .config_idents()
+                .iter()
+                .map(|ident| format!("MBEDTLS_{ident}"))
+                .collect::<Vec<_>>();
+            let guard = header
                 .trim_start_matches("mbedtls/")
                 .trim_end_matches(".h")
                 .to_uppercase();
             let guard = format!("MBEDTLS_{guard}_H");
 
-            out.push_str(&format!(
-                "\n#if defined({alt})\n#undef {alt}\n#undef {guard}\n"
-            ));
+            out.push_str(&format!("\n#if defined({})\n", alts[0]));
+            for alt in &alts {
+                out.push_str(&format!("#undef {alt}\n"));
+            }
+            out.push_str(&format!("#undef {guard}\n"));
             for symbol in soft.symbols {
                 out.push_str(&format!("#define {symbol} {}\n", soft.soft_name(symbol)));
             }
-            out.push_str(&format!("#include \"{}\"\n", soft.header));
+            out.push_str(&format!("#include \"{header}\"\n"));
             for symbol in soft.symbols {
                 out.push_str(&format!("#undef {symbol}\n"));
             }
-            out.push_str(&format!("#define {alt}\n#endif\n"));
+            for alt in &alts {
+                out.push_str(&format!("#define {alt}\n"));
+            }
+            out.push_str("#endif\n");
         }
 
         out

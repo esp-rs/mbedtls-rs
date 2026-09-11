@@ -71,7 +71,9 @@ jobs:
         run: cargo fmt -- --check
 
       - name: Clippy
-        run: cargo clippy -- -D warnings
+        run: |
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo clippy -p mbedtls-rs-sys --all-targets --features embassy-crypto,_route-test -- -D warnings
 
       - name: Build
         run: cargo build
@@ -92,6 +94,11 @@ jobs:
       # default feature set, so it needs its own invocation.
       - name: Test - ESP exp_mod routing
         run: cargo test -p mbedtls-rs-sys --features _route-test --test exp_mod_route
+
+      # Host-side test of the embassy-crypto hook impls, over the software
+      # drivers of `embassy-crypto-rustcrypto`; needs the opt-in feature.
+      - name: Test - embassy-crypto hooks
+        run: cargo test -p mbedtls-rs-sys --features embassy-crypto --test embassy_crypto
 
       - name: Fmt Check - STD Examples
         run: cd examples/std; cargo fmt -- --check

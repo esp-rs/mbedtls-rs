@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * (Breaking) The ESP SHA hooks now drive the `esp-hal` contexts through their native API, so `EspSha*` are `EspDigest<_>` rather than `RustCryptoDigest<_>`
 * Build `riscv32imafc-*` with the hard-float `ilp32f` ABI rustc uses, fixing a link failure on ESP32-P4 / ESP32-S31
 * Add an opt-in `ecp-restartable` feature that enables `MBEDTLS_ECP_RESTARTABLE`
+* Add an `embassy-crypto` feature: hook implementations in `hook::backend::embassy` delegating to the `embassy-crypto` drivers (SHA-1/224/256/384/512, AES-128/256, the P-256/P-384 scalar multiplication, ECDSA and ECDH)
+* Add ECDSA (`hook_ecdsa`) and ECDH (`hook_ecdh`) hooks, with the MbedTLS software implementations as the fallback
 
 ## [0.2.0] - 2026-08-20
 * (Breaking) Enforce the short-enums policy across all of clang, GCC and bindgen (#168)

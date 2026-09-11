@@ -29,6 +29,12 @@ doctest = false
 name = "exp_mod_route"
 required-features = ["_route-test"]
 
+# Host-side test of the embassy-crypto hook impls, over the software drivers of
+# `embassy-crypto-rustcrypto`.
+[[test]]
+name = "embassy_crypto"
+required-features = ["embassy-crypto"]
+
 [features]
 # The default profile is the full config (`tls`), so behavior is unchanged for
 # existing consumers and the pre-generated bindings/libs apply as-is. Select a
@@ -91,6 +97,8 @@ nohook = [
     "nohook-aes",
     "nohook-ecp-mul",
     "nohook-ecp-verify",
+    "nohook-ecdsa",
+    "nohook-ecdh",
 ]
 nohook-sha1 = []
 nohook-sha256 = []
@@ -99,6 +107,9 @@ nohook-exp-mod = []
 nohook-aes = []
 nohook-ecp-mul = []
 nohook-ecp-verify = []
+# (The ECDSA and ECDH hooks are also unavailable with `ecp-restartable`.)
+nohook-ecdsa = []
+nohook-ecdh = []
 # Enable timer/wall-clock hooks for custom time implementations
 hook-timer = []
 hook-wall-clock = ["hook-timer"] # 'hook-wall-clock' feature requires 'hook-timer' to be enabled. MbedTLS X.509 certificate validation requires both time() and gmtime_r() functions.
@@ -299,6 +310,9 @@ crypto-bigint = { workspace = true, default-features = false, features = ["extra
 # For embassy timer hook impl
 embassy-time = {workspace = true, optional = true }
 
+# For embassy-crypto hook impls
+embassy-crypto = { workspace = true, optional = true }
+
 # ESP-IDF: The mbedtls lib distributed with ESP-IDF is used
 # All other platforms: mbedtls libs and bindings are created on the fly
 [target.'cfg(target_os = "espidf")'.dependencies]
@@ -308,6 +322,17 @@ esp-idf-sys = { version = "0.37", default-features = false }
 # The hook dispatch uses `critical_section`; provide the std implementation
 # for the host-side integration tests (on embedded targets the HAL provides it)
 critical-section = { workspace = true, features = ["std"] }
+# The drivers behind the embassy-crypto hook impls, for their host-side test
+embassy-crypto-rustcrypto = { workspace = true, features = [
+    "embassy-crypto-sha1", "embassy-crypto-sha224", "embassy-crypto-sha256",
+    "embassy-crypto-sha384", "embassy-crypto-sha512",
+    "embassy-crypto-aes128-ecb", "embassy-crypto-aes256-ecb",
+    "embassy-crypto-p256-arith", "embassy-crypto-p384-arith",
+    "embassy-crypto-p256-ecdsa", "embassy-crypto-p384-ecdsa",
+    "embassy-crypto-p256-ecdh", "embassy-crypto-p384-ecdh",
+] }
+# The RNG driver the ECDSA drivers draw their nonces from
+embassy-crypto-rand = { workspace = true }
 
 [build-dependencies]
 anyhow = { workspace = true, default-features = true }

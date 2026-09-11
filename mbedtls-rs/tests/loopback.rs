@@ -173,12 +173,6 @@ impl Wake for CountingWake {
     }
 }
 
-struct NoopWake;
-
-impl Wake for NoopWake {
-    fn wake(self: Arc<Self>) {}
-}
-
 fn drive_pair<ClientFuture, ServerFuture>(
     client_future: ClientFuture,
     server_future: ServerFuture,
@@ -191,9 +185,8 @@ where
     let mut client_future = pin!(client_future);
     let mut server_future = pin!(server_future);
     let client_waker = Waker::from(client_wake);
-    let server_waker = Waker::from(Arc::new(NoopWake));
     let mut client_context = Context::from_waker(&client_waker);
-    let mut server_context = Context::from_waker(&server_waker);
+    let mut server_context = Context::from_waker(Waker::noop());
     let mut client_output = None;
     let mut server_output = None;
 

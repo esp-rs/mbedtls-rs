@@ -163,6 +163,9 @@ esp32s3 = ["mbedtls-rs-sys/esp32s3"]
 # embassy-time hook impls
 embassy-time = ["mbedtls-rs-sys/embassy-time"]
 
+# embassy-crypto hook impls
+embassy-crypto = ["mbedtls-rs-sys/embassy-crypto"]
+
 [dependencies]
 # Algorithm surface is selected by the consumer via this crate's bundle/leaf
 # features (default = `tls` = full historical surface). The fixed feature list

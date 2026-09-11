@@ -35,6 +35,12 @@ fn main() -> Result<()> {
         ("CARGO_FEATURE_NOHOOK_AES", Hook::Aes),
         ("CARGO_FEATURE_NOHOOK_ECP_MUL", Hook::EcpMul),
         ("CARGO_FEATURE_NOHOOK_ECP_VERIFY", Hook::EcpVerify),
+        ("CARGO_FEATURE_NOHOOK_ECDSA", Hook::Ecdsa),
+        ("CARGO_FEATURE_NOHOOK_ECDH", Hook::Ecdh),
+        // MbedTLS rejects restartable ECP operations together with
+        // alternative ECDSA/ECDH implementations (see `check_config.h`)
+        ("CARGO_FEATURE_ECP_RESTARTABLE", Hook::Ecdsa),
+        ("CARGO_FEATURE_ECP_RESTARTABLE", Hook::Ecdh),
     ] {
         if env::var(feature).is_ok() {
             hooks.remove(hook);
