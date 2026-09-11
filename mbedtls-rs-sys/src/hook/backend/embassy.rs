@@ -17,11 +17,11 @@
 //!
 //! Only the drivers behind the hooks that are actually installed need to be
 //! registered. The implementations serving several drivers -
-//! [`aes::EmbassyAes`] (one driver per key size) and [`ecp::EmbassyEcp`] (one
-//! driver per curve) - are generic over the set of drivers they use, so e.g.
-//! an AES peripheral that only does AES-128 can be hooked without registering
-//! an AES-256 driver: whatever is outside the set is handled by the MbedTLS
-//! software implementation, as when un-hooked.
+//! [`aes::EmbassyAes`] (one driver per key size) and the elliptic-curve ones
+//! (one driver per curve) - are generic over the set of drivers they use, so
+//! e.g. an AES peripheral that only does AES-128 can be hooked without
+//! registering an AES-256 driver: whatever is outside the set is handled by
+//! the MbedTLS software implementation, as when un-hooked.
 //!
 //! | Hook           | Implementation                         | `embassy-crypto` drivers |
 //! |----------------|----------------------------------------|--------------------------|
@@ -32,21 +32,23 @@
 //! | `hook_sha512`  | [`digest::EmbassySha512`] ([`SHA512`]) | `Sha512`                 |
 //! | `hook_aes`     | [`aes::EmbassyAes`] ([`AES`])          | `Aes128Ecb`, `Aes256Ecb` |
 //! | `hook_ecp_mul` | [`ecp::EmbassyEcp`] ([`ECP`])          | `P256Arith`, optionally `P384Arith` |
+//! | `hook_ecdsa`   | [`ecp::EmbassyEcdsa`] ([`ECDSA`])      | `P256Ecdsa`, optionally `P384Ecdsa` (both drawing their nonces from `Rng`) |
+//! | `hook_ecdh`    | [`ecp::EmbassyEcdh`] ([`ECDH`])        | `P256Ecdh`, optionally `P384Ecdh` |
 //!
-//! ECDSA and ECDH run on top of the hooked scalar multiplication; the
-//! `embassy-crypto` ECDSA and ECDH drivers are not used.
+//! Where ECDSA or ECDH are not hooked, the MbedTLS software implementation
+//! computes them on top of the (possibly hooked) scalar multiplication.
 //!
 //! ```ignore
 //! use mbedtls_rs_sys::hook::aes::hook_aes;
-//! use mbedtls_rs_sys::hook::backend::embassy::{AES, ECP, SHA256};
+//! use mbedtls_rs_sys::hook::backend::embassy::{AES, ECDSA, SHA256};
 //! use mbedtls_rs_sys::hook::digest::hook_sha256;
-//! use mbedtls_rs_sys::hook::ecp::hook_ecp_mul;
+//! use mbedtls_rs_sys::hook::ecdsa::hook_ecdsa;
 //!
-//! // Requires the `Sha256`, `Aes128Ecb`, `Aes256Ecb` and `P256Arith` drivers
+//! // Requires the `Sha256`, `Aes128Ecb`, `Aes256Ecb`, `P256Ecdsa` and `Rng` drivers
 //! unsafe {
 //!     hook_sha256(Some(&SHA256));
 //!     hook_aes(Some(&AES));
-//!     hook_ecp_mul(Some(&ECP));
+//!     hook_ecdsa(Some(&ECDSA));
 //! }
 //! ```
 
@@ -58,11 +60,7 @@
 pub mod aes;
 #[cfg(feature = "embassy-crypto")]
 pub mod digest;
-#[cfg(all(
-    feature = "embassy-crypto",
-    feature = "alg-ecp",
-    not(feature = "nohook-ecp-mul")
-))]
+#[cfg(all(feature = "embassy-crypto", feature = "alg-ecp"))]
 pub mod ecp;
 #[cfg(all(feature = "embassy-time", feature = "hook-timer"))]
 pub mod timer;
@@ -116,3 +114,21 @@ pub static AES: aes::EmbassyAes = aes::EmbassyAes::new();
     not(feature = "nohook-ecp-mul")
 ))]
 pub static ECP: ecp::EmbassyEcp = ecp::EmbassyEcp::new();
+/// P-256 ECDSA via the `embassy-crypto` `P256Ecdsa` driver
+#[cfg(all(
+    feature = "embassy-crypto",
+    feature = "alg-ecp",
+    feature = "alg-ecdsa",
+    not(feature = "nohook-ecdsa"),
+    not(feature = "ecp-restartable")
+))]
+pub static ECDSA: ecp::EmbassyEcdsa = ecp::EmbassyEcdsa::new();
+/// P-256 ECDH via the `embassy-crypto` `P256Ecdh` driver
+#[cfg(all(
+    feature = "embassy-crypto",
+    feature = "alg-ecp",
+    feature = "alg-ecdh",
+    not(feature = "nohook-ecdh"),
+    not(feature = "ecp-restartable")
+))]
+pub static ECDH: ecp::EmbassyEcdh = ecp::EmbassyEcdh::new();

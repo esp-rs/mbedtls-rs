@@ -1,12 +1,15 @@
 //! Host-side tests of the `embassy-crypto` hook implementations
 //! (`hook::backend::embassy`), with the RustCrypto-based software drivers of
-//! `embassy-crypto-rustcrypto` registered.
+//! `embassy-crypto-rustcrypto` and the OS RNG driver of `embassy-crypto-rand`
+//! registered.
 //!
 //! - The MbedTLS self-tests run the digest/AES KATs (and everything built on
 //!   AES: CCM, GCM, CMAC, CTR-DRBG) through the hooks and thus the drivers.
-//! - The ECP tests check that the drivers serve the multiplications they are
-//!   meant to, with results identical to the MbedTLS software implementation,
-//!   and that everything else is left to software.
+//! - The curve tests check that the drivers serve the operations they are
+//!   meant to - with results matching the MbedTLS software implementation
+//!   (for signatures: verifying with it, both ways) - and that everything
+//!   else is left to software.
+//! - The ECDSA and ECDH tests go through the hooked MbedTLS API end to end.
 
 use core::ffi::{c_int, c_uchar, c_void};
 use core::mem::MaybeUninit;
@@ -15,19 +18,34 @@ use std::sync::{Mutex, MutexGuard, Once};
 
 use mbedtls_rs_sys::*;
 
-// Registers the `embassy-crypto` drivers
+// Register the `embassy-crypto` drivers
+use embassy_crypto_rand as _;
 use embassy_crypto_rustcrypto as _;
 
-#[cfg(all(feature = "alg-ecp", not(feature = "nohook-ecp-mul")))]
-use mbedtls_rs_sys::hook::backend::embassy::ecp::{EmbassyCurves, EmbassyEcp, P256, P384};
+#[cfg(feature = "alg-ecp")]
+use mbedtls_rs_sys::hook::backend::embassy::ecp::{self as embassy_ec, EmbassyCurves, P256, P384};
 
 /// Serializes the tests: the MbedTLS self-tests are not thread-safe (see
 /// `crypto_self_tests.rs`), and the hooks are process-global.
 static SERIAL: Mutex<()> = Mutex::new(());
 
-/// The ECP implementation hooked by the tests
+/// The elliptic-curve implementations hooked by the tests
 #[cfg(all(feature = "alg-ecp", not(feature = "nohook-ecp-mul")))]
-static ECP: EmbassyEcp<(P256, P384)> = EmbassyEcp::new();
+static ECP: embassy_ec::EmbassyEcp<(P256, P384)> = embassy_ec::EmbassyEcp::new();
+#[cfg(all(
+    feature = "alg-ecp",
+    feature = "alg-ecdsa",
+    not(feature = "nohook-ecdsa"),
+    not(feature = "ecp-restartable")
+))]
+static ECDSA: embassy_ec::EmbassyEcdsa<(P256, P384)> = embassy_ec::EmbassyEcdsa::new();
+#[cfg(all(
+    feature = "alg-ecp",
+    feature = "alg-ecdh",
+    not(feature = "nohook-ecdh"),
+    not(feature = "ecp-restartable")
+))]
+static ECDH: embassy_ec::EmbassyEcdh<(P256, P384)> = embassy_ec::EmbassyEcdh::new();
 
 /// Serialize with the other tests, with the `embassy-crypto` implementations hooked
 fn hooked() -> MutexGuard<'static, ()> {
@@ -55,6 +73,20 @@ fn hooked() -> MutexGuard<'static, ()> {
         hook::aes::hook_aes(Some(&embassy::AES));
         #[cfg(all(feature = "alg-ecp", not(feature = "nohook-ecp-mul")))]
         hook::ecp::hook_ecp_mul(Some(&ECP));
+        #[cfg(all(
+            feature = "alg-ecp",
+            feature = "alg-ecdsa",
+            not(feature = "nohook-ecdsa"),
+            not(feature = "ecp-restartable")
+        ))]
+        hook::ecdsa::hook_ecdsa(Some(&ECDSA));
+        #[cfg(all(
+            feature = "alg-ecp",
+            feature = "alg-ecdh",
+            not(feature = "nohook-ecdh"),
+            not(feature = "ecp-restartable")
+        ))]
+        hook::ecdh::hook_ecdh(Some(&ECDH));
     });
 
     guard
@@ -175,7 +207,8 @@ fn sha256_clone() {
 /// `C` serves in-range multiplications on its curve with the driver - by the
 /// base point and by an arbitrary point - with the same results as the
 /// MbedTLS software implementation, and leaves everything else (out-of-range
-/// scalars, points not on the curve, other curves) to software.
+/// scalars, points not on the curve, other curves) to software, which
+/// reports the MbedTLS error codes through the hooked API.
 #[cfg(all(feature = "alg-ecp", not(feature = "nohook-ecp-mul")))]
 #[allow(dead_code)]
 fn check_mul<C: EmbassyCurves, Other: EmbassyCurves>(id: mbedtls_ecp_group_id) {
@@ -186,9 +219,7 @@ fn check_mul<C: EmbassyCurves, Other: EmbassyCurves>(id: mbedtls_ecp_group_id) {
     let mut seed = 0x0123_4567_89ab_cdef_u64;
     let p_rng = &mut seed as *mut u64 as *mut c_void;
 
-    // The base point, as a point of its own (the group is borrowed mutably below)
-    let mut g = point();
-    assert_eq!(unsafe { mbedtls_ecp_copy(&mut *g, &grp.G) }, 0);
+    let g = base_point(&grp);
 
     let mut m = mpi();
 
@@ -198,12 +229,7 @@ fn check_mul<C: EmbassyCurves, Other: EmbassyCurves>(id: mbedtls_ecp_group_id) {
             0
         );
 
-        let mut d = mpi();
-        let mut q = point();
-        assert_eq!(
-            unsafe { mbedtls_ecp_gen_keypair(&mut *grp, &mut *d, &mut *q, Some(rng), p_rng) },
-            0
-        );
+        let (_, q) = keypair(&mut grp, p_rng);
 
         for p in [&g, &q] {
             let mut expected = point();
@@ -233,26 +259,185 @@ fn check_mul<C: EmbassyCurves, Other: EmbassyCurves>(id: mbedtls_ecp_group_id) {
     let mut r = point();
 
     // Scalars outside `[1, n)`
-    let zero = mpi();
-    assert!(C::mul(&grp, &mut r, &zero, &g).is_none());
+    assert!(C::mul(&grp, &mut r, &mpi(), &g).is_none());
 
     let mut n = mpi();
     assert_eq!(unsafe { mbedtls_mpi_copy(&mut *n, &grp.N) }, 0);
     assert!(C::mul(&grp, &mut r, &n, &g).is_none());
 
     // A point not on the curve
-    assert!(C::mul(&grp, &mut r, &m, &off_curve_point()).is_none());
+    let off_curve = off_curve_point();
+    assert!(C::mul(&grp, &mut r, &m, &off_curve).is_none());
+
+    let ret = unsafe { mbedtls_ecp_mul(&mut *grp, &mut *r, &*m, &*off_curve, Some(rng), p_rng) };
+    assert_eq!(ret, MBEDTLS_ERR_ECP_INVALID_KEY);
 
     // Another curve
     assert!(Other::mul(&grp, &mut r, &m, &g).is_none());
 }
 
-/// ECDSA over the hooked scalar multiplication, and the MbedTLS error code
-/// for a point not on the curve (the operation is left to software).
+/// `C` serves ECDSA signing and verification on its curve with the driver -
+/// hashes shorter and longer than the curve order included - with signatures
+/// the MbedTLS software implementation verifies and vice versa, and leaves
+/// out-of-range private keys, public keys not on the curve and other curves
+/// to software.
+#[cfg(all(
+    feature = "alg-ecp",
+    feature = "alg-ecdsa",
+    not(feature = "nohook-ecdsa"),
+    not(feature = "ecp-restartable")
+))]
+#[allow(dead_code)]
+fn check_curve_ecdsa<C: EmbassyCurves, Other: EmbassyCurves>(id: mbedtls_ecp_group_id) {
+    let _guard = hooked();
+
+    let mut grp = group(id);
+
+    let mut seed = 0x0f1e_2d3c_4b5a_6978_u64;
+    let p_rng = &mut seed as *mut u64 as *mut c_void;
+
+    let (d, q) = keypair(&mut grp, p_rng);
+
+    for len in [20, 32, 48, 64] {
+        let hash = (0..len).map(|i| (i * 37 + 1) as u8).collect::<Vec<_>>();
+        let mut tampered = hash.clone();
+        tampered[0] ^= 1;
+
+        // Signed by the driver, verified by software
+        let (mut r, mut s) = (mpi(), mpi());
+        assert!(
+            matches!(C::ecdsa_sign(&grp, &mut r, &mut s, &d, &hash), Some(Ok(()))),
+            "not served by the driver"
+        );
+        hook::ecdsa::ecdsa_verify_soft(&mut grp, &hash, &q, &r, &s).unwrap();
+
+        // Signed by software, verified by the driver
+        let (mut r, mut s) = (mpi(), mpi());
+        unsafe {
+            hook::ecdsa::ecdsa_sign_soft(&mut grp, &mut r, &mut s, &d, &hash, Some(rng), p_rng)
+        }
+        .unwrap();
+        assert!(matches!(
+            C::ecdsa_verify(&grp, &hash, &q, &r, &s),
+            Some(Ok(()))
+        ));
+        assert!(matches!(
+            C::ecdsa_verify(&grp, &tampered, &q, &r, &s),
+            Some(Err(e)) if e.code() == MBEDTLS_ERR_ECP_VERIFY_FAILED
+        ));
+    }
+
+    let hash = [0x5a; 32];
+    let (mut r, mut s) = (mpi(), mpi());
+
+    // A private key outside `[1, n)`
+    assert!(C::ecdsa_sign(&grp, &mut r, &mut s, &mpi(), &hash).is_none());
+
+    // Another curve
+    assert!(Other::ecdsa_sign(&grp, &mut r, &mut s, &d, &hash).is_none());
+
+    unsafe { hook::ecdsa::ecdsa_sign_soft(&mut grp, &mut r, &mut s, &d, &hash, Some(rng), p_rng) }
+        .unwrap();
+
+    // A public key not on the curve
+    assert!(C::ecdsa_verify(&grp, &hash, &off_curve_point(), &r, &s).is_none());
+
+    // Another curve
+    assert!(Other::ecdsa_verify(&grp, &hash, &q, &r, &s).is_none());
+}
+
+/// `C` serves ECDH public keys and shared secrets on its curve with the
+/// driver, with the same results as the MbedTLS software implementation, and
+/// leaves out-of-range private keys, peer public keys not on the curve and
+/// other curves to software.
 #[cfg(all(
     feature = "alg-ecp",
     not(feature = "nohook-ecp-mul"),
-    feature = "alg-ecdsa"
+    feature = "alg-ecdh",
+    not(feature = "nohook-ecdh"),
+    not(feature = "ecp-restartable")
+))]
+#[allow(dead_code)]
+fn check_curve_ecdh<C: EmbassyCurves, Other: EmbassyCurves>(id: mbedtls_ecp_group_id) {
+    let _guard = hooked();
+
+    let mut grp = group(id);
+
+    let mut seed = 0x1357_9bdf_2468_ace0_u64;
+    let p_rng = &mut seed as *mut u64 as *mut c_void;
+
+    let g = base_point(&grp);
+
+    for _ in 0..4 {
+        let (d, _) = keypair(&mut grp, p_rng);
+        let (_, peer) = keypair(&mut grp, p_rng);
+
+        let mut expected = point();
+        unsafe {
+            hook::ecp::ecp_mul_soft(
+                &mut grp,
+                &mut expected,
+                &d,
+                &g,
+                Some(rng),
+                p_rng,
+                core::ptr::null_mut(),
+            )
+        }
+        .unwrap();
+
+        let mut actual = point();
+        assert!(
+            matches!(C::ecdh_public_key(&grp, &mut actual, &d), Some(Ok(()))),
+            "not served by the driver"
+        );
+        assert_eq!(unsafe { mbedtls_ecp_point_cmp(&*expected, &*actual) }, 0);
+
+        let mut expected = mpi();
+        unsafe {
+            hook::ecdh::ecdh_compute_shared_soft(
+                &mut grp,
+                &mut expected,
+                &peer,
+                &d,
+                Some(rng),
+                p_rng,
+            )
+        }
+        .unwrap();
+
+        let mut actual = mpi();
+        assert!(matches!(
+            C::ecdh_shared_secret(&grp, &mut actual, &peer, &d),
+            Some(Ok(()))
+        ));
+        assert_eq!(unsafe { mbedtls_mpi_cmp_mpi(&*expected, &*actual) }, 0);
+    }
+
+    let (d, q) = keypair(&mut grp, p_rng);
+    let (mut r, mut z) = (point(), mpi());
+
+    // A private key outside `[1, n)`
+    assert!(C::ecdh_public_key(&grp, &mut r, &mpi()).is_none());
+    assert!(C::ecdh_shared_secret(&grp, &mut z, &q, &mpi()).is_none());
+
+    // A peer public key not on the curve
+    assert!(C::ecdh_shared_secret(&grp, &mut z, &off_curve_point(), &d).is_none());
+
+    // Another curve
+    assert!(Other::ecdh_public_key(&grp, &mut r, &d).is_none());
+    assert!(Other::ecdh_shared_secret(&grp, &mut z, &q, &d).is_none());
+}
+
+/// ECDSA through the hooked MbedTLS API: raw and deterministic (ASN.1)
+/// signatures - the latter randomized by the driver, so no two are the same -
+/// and the MbedTLS error codes for signatures that do not verify and public
+/// keys not on the curve (the latter left to software).
+#[cfg(all(
+    feature = "alg-ecp",
+    feature = "alg-ecdsa",
+    not(feature = "nohook-ecdsa"),
+    not(feature = "ecp-restartable")
 ))]
 #[allow(dead_code)]
 fn check_ecdsa(id: mbedtls_ecp_group_id) {
@@ -263,56 +448,131 @@ fn check_ecdsa(id: mbedtls_ecp_group_id) {
     let mut seed = 0xfedc_ba98_7654_3210_u64;
     let p_rng = &mut seed as *mut u64 as *mut c_void;
 
-    let mut d = mpi();
-    let mut q = point();
-    assert_eq!(
-        unsafe { mbedtls_ecp_gen_keypair(&mut *grp, &mut *d, &mut *q, Some(rng), p_rng) },
-        0
-    );
+    let (d, q) = keypair(&mut grp, p_rng);
 
     let mut hash = [0x5a; 32];
-    let mut r = mpi();
-    let mut s = mpi();
+    let (mut r, mut s) = (mpi(), mpi());
 
     unsafe {
-        assert_eq!(
-            mbedtls_ecdsa_sign(
-                &mut *grp,
-                &mut *r,
-                &mut *s,
-                &*d,
-                hash.as_ptr(),
-                hash.len(),
-                Some(rng),
-                p_rng,
-            ),
-            0
+        let ret = mbedtls_ecdsa_sign(
+            &mut *grp,
+            &mut *r,
+            &mut *s,
+            &*d,
+            hash.as_ptr(),
+            hash.len(),
+            Some(rng),
+            p_rng,
         );
+        assert_eq!(ret, 0);
 
-        assert_eq!(
-            mbedtls_ecdsa_verify(&mut *grp, hash.as_ptr(), hash.len(), &*q, &*r, &*s),
-            0
-        );
+        let ret = mbedtls_ecdsa_verify(&mut *grp, hash.as_ptr(), hash.len(), &*q, &*r, &*s);
+        assert_eq!(ret, 0);
+
+        let off_curve = off_curve_point();
+        let expected = hook::ecdsa::ecdsa_verify_soft(&mut grp, &hash, &off_curve, &r, &s)
+            .unwrap_err()
+            .code();
+        let ret = mbedtls_ecdsa_verify(&mut *grp, hash.as_ptr(), hash.len(), &*off_curve, &*r, &*s);
+        assert_eq!(ret, expected);
 
         hash[0] ^= 1;
+        let ret = mbedtls_ecdsa_verify(&mut *grp, hash.as_ptr(), hash.len(), &*q, &*r, &*s);
+        assert_eq!(ret, MBEDTLS_ERR_ECP_VERIFY_FAILED);
+    }
 
-        assert_eq!(
-            mbedtls_ecdsa_verify(&mut *grp, hash.as_ptr(), hash.len(), &*q, &*r, &*s),
-            MBEDTLS_ERR_ECP_VERIFY_FAILED
-        );
+    let mut ctx = Ctx::new(mbedtls_ecdsa_init, mbedtls_ecdsa_free);
+    let mut sigs = [([0; 160], 0); 2];
 
-        let mut out = point();
-        assert_eq!(
-            mbedtls_ecp_mul(
-                &mut *grp,
-                &mut *out,
-                &*d,
-                &*off_curve_point(),
+    unsafe {
+        assert_eq!(mbedtls_ecdsa_genkey(&mut *ctx, id, Some(rng), p_rng), 0);
+
+        for (sig, len) in &mut sigs {
+            let ret = mbedtls_ecdsa_write_signature(
+                &mut *ctx,
+                mbedtls_md_type_t_MBEDTLS_MD_SHA256,
+                hash.as_ptr(),
+                hash.len(),
+                sig.as_mut_ptr(),
+                sig.len(),
+                len,
                 Some(rng),
-                p_rng
-            ),
-            MBEDTLS_ERR_ECP_INVALID_KEY
-        );
+                p_rng,
+            );
+            assert_eq!(ret, 0);
+
+            let ret = mbedtls_ecdsa_read_signature(
+                &mut *ctx,
+                hash.as_ptr(),
+                hash.len(),
+                sig.as_ptr(),
+                *len,
+            );
+            assert_eq!(ret, 0);
+        }
+
+        assert_ne!(sigs[0].0[..sigs[0].1], sigs[1].0[..sigs[1].1]);
+
+        let (sig, len) = &sigs[0];
+        hash[0] ^= 1;
+        let ret =
+            mbedtls_ecdsa_read_signature(&mut *ctx, hash.as_ptr(), hash.len(), sig.as_ptr(), *len);
+        assert_eq!(ret, MBEDTLS_ERR_ECP_VERIFY_FAILED);
+    }
+}
+
+/// ECDH through the hooked MbedTLS API: two parties agree on the shared
+/// secret the software implementation computes, and a peer public key not on
+/// the curve fails with the MbedTLS error code (left to software).
+#[cfg(all(
+    feature = "alg-ecp",
+    feature = "alg-ecdh",
+    not(feature = "nohook-ecdh"),
+    not(feature = "ecp-restartable")
+))]
+#[allow(dead_code)]
+fn check_ecdh(id: mbedtls_ecp_group_id) {
+    let _guard = hooked();
+
+    let mut grp = group(id);
+
+    let mut seed = 0x0246_8ace_1357_9bdf_u64;
+    let p_rng = &mut seed as *mut u64 as *mut c_void;
+
+    let (mut d1, mut q1, mut d2, mut q2) = (mpi(), point(), mpi(), point());
+    let (mut z1, mut z2, mut expected) = (mpi(), mpi(), mpi());
+
+    unsafe {
+        let ret = mbedtls_ecdh_gen_public(&mut *grp, &mut *d1, &mut *q1, Some(rng), p_rng);
+        assert_eq!(ret, 0);
+        let ret = mbedtls_ecdh_gen_public(&mut *grp, &mut *d2, &mut *q2, Some(rng), p_rng);
+        assert_eq!(ret, 0);
+
+        let ret = mbedtls_ecdh_compute_shared(&mut *grp, &mut *z1, &*q2, &*d1, Some(rng), p_rng);
+        assert_eq!(ret, 0);
+        let ret = mbedtls_ecdh_compute_shared(&mut *grp, &mut *z2, &*q1, &*d2, Some(rng), p_rng);
+        assert_eq!(ret, 0);
+
+        assert_eq!(mbedtls_mpi_cmp_mpi(&*z1, &*z2), 0);
+
+        hook::ecdh::ecdh_compute_shared_soft(&mut grp, &mut expected, &q2, &d1, Some(rng), p_rng)
+            .unwrap();
+        assert_eq!(mbedtls_mpi_cmp_mpi(&*expected, &*z1), 0);
+
+        let off_curve = off_curve_point();
+        let expected = hook::ecdh::ecdh_compute_shared_soft(
+            &mut grp,
+            &mut expected,
+            &off_curve,
+            &d1,
+            Some(rng),
+            p_rng,
+        )
+        .unwrap_err()
+        .code();
+        let ret =
+            mbedtls_ecdh_compute_shared(&mut *grp, &mut *z1, &*off_curve, &*d1, Some(rng), p_rng);
+        assert_eq!(ret, expected);
     }
 }
 
@@ -338,8 +598,59 @@ fn p384_mul() {
 
 #[cfg(all(
     feature = "alg-ecp",
-    not(feature = "nohook-ecp-mul"),
     feature = "alg-ecdsa",
+    not(feature = "nohook-ecdsa"),
+    not(feature = "ecp-restartable"),
+    feature = "curve-secp256r1"
+))]
+#[test]
+fn p256_curve_ecdsa() {
+    check_curve_ecdsa::<P256, P384>(mbedtls_ecp_group_id_MBEDTLS_ECP_DP_SECP256R1);
+}
+
+#[cfg(all(
+    feature = "alg-ecp",
+    feature = "alg-ecdsa",
+    not(feature = "nohook-ecdsa"),
+    not(feature = "ecp-restartable"),
+    feature = "curve-secp384r1"
+))]
+#[test]
+fn p384_curve_ecdsa() {
+    check_curve_ecdsa::<P384, P256>(mbedtls_ecp_group_id_MBEDTLS_ECP_DP_SECP384R1);
+}
+
+#[cfg(all(
+    feature = "alg-ecp",
+    not(feature = "nohook-ecp-mul"),
+    feature = "alg-ecdh",
+    not(feature = "nohook-ecdh"),
+    not(feature = "ecp-restartable"),
+    feature = "curve-secp256r1"
+))]
+#[test]
+fn p256_curve_ecdh() {
+    check_curve_ecdh::<P256, P384>(mbedtls_ecp_group_id_MBEDTLS_ECP_DP_SECP256R1);
+}
+
+#[cfg(all(
+    feature = "alg-ecp",
+    not(feature = "nohook-ecp-mul"),
+    feature = "alg-ecdh",
+    not(feature = "nohook-ecdh"),
+    not(feature = "ecp-restartable"),
+    feature = "curve-secp384r1"
+))]
+#[test]
+fn p384_curve_ecdh() {
+    check_curve_ecdh::<P384, P256>(mbedtls_ecp_group_id_MBEDTLS_ECP_DP_SECP384R1);
+}
+
+#[cfg(all(
+    feature = "alg-ecp",
+    feature = "alg-ecdsa",
+    not(feature = "nohook-ecdsa"),
+    not(feature = "ecp-restartable"),
     feature = "curve-secp256r1"
 ))]
 #[test]
@@ -349,13 +660,38 @@ fn p256_ecdsa() {
 
 #[cfg(all(
     feature = "alg-ecp",
-    not(feature = "nohook-ecp-mul"),
     feature = "alg-ecdsa",
+    not(feature = "nohook-ecdsa"),
+    not(feature = "ecp-restartable"),
     feature = "curve-secp384r1"
 ))]
 #[test]
 fn p384_ecdsa() {
     check_ecdsa(mbedtls_ecp_group_id_MBEDTLS_ECP_DP_SECP384R1);
+}
+
+#[cfg(all(
+    feature = "alg-ecp",
+    feature = "alg-ecdh",
+    not(feature = "nohook-ecdh"),
+    not(feature = "ecp-restartable"),
+    feature = "curve-secp256r1"
+))]
+#[test]
+fn p256_ecdh() {
+    check_ecdh(mbedtls_ecp_group_id_MBEDTLS_ECP_DP_SECP256R1);
+}
+
+#[cfg(all(
+    feature = "alg-ecp",
+    feature = "alg-ecdh",
+    not(feature = "nohook-ecdh"),
+    not(feature = "ecp-restartable"),
+    feature = "curve-secp384r1"
+))]
+#[test]
+fn p384_ecdh() {
+    check_ecdh(mbedtls_ecp_group_id_MBEDTLS_ECP_DP_SECP384R1);
 }
 
 /// An MbedTLS context, initialized and freed with the given functions
@@ -412,6 +748,31 @@ fn group(id: mbedtls_ecp_group_id) -> Ctx<mbedtls_ecp_group> {
     assert_eq!(unsafe { mbedtls_ecp_group_load(&mut *grp, id) }, 0);
 
     grp
+}
+
+/// The base point of the group, as a point of its own (so that the group
+/// can be borrowed mutably while using it)
+#[allow(dead_code)]
+fn base_point(grp: &mbedtls_ecp_group) -> Ctx<mbedtls_ecp_point> {
+    let mut g = point();
+    assert_eq!(unsafe { mbedtls_ecp_copy(&mut *g, &grp.G) }, 0);
+
+    g
+}
+
+/// A random key pair on the group
+#[allow(dead_code)]
+fn keypair(
+    grp: &mut mbedtls_ecp_group,
+    p_rng: *mut c_void,
+) -> (Ctx<mbedtls_mpi>, Ctx<mbedtls_ecp_point>) {
+    let (mut d, mut q) = (mpi(), point());
+    assert_eq!(
+        unsafe { mbedtls_ecp_gen_keypair(grp, &mut *d, &mut *q, Some(rng), p_rng) },
+        0
+    );
+
+    (d, q)
 }
 
 /// The affine point (1, 1), which is on none of the curves

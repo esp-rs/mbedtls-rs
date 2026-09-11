@@ -97,6 +97,8 @@ nohook = [
     "nohook-aes",
     "nohook-ecp-mul",
     "nohook-ecp-verify",
+    "nohook-ecdsa",
+    "nohook-ecdh",
 ]
 nohook-sha1 = []
 nohook-sha256 = []
@@ -105,6 +107,9 @@ nohook-exp-mod = []
 nohook-aes = []
 nohook-ecp-mul = []
 nohook-ecp-verify = []
+# (The ECDSA and ECDH hooks are also unavailable with `ecp-restartable`.)
+nohook-ecdsa = []
+nohook-ecdh = []
 # Enable timer/wall-clock hooks for custom time implementations
 hook-timer = []
 hook-wall-clock = ["hook-timer"] # 'hook-wall-clock' feature requires 'hook-timer' to be enabled. MbedTLS X.509 certificate validation requires both time() and gmtime_r() functions.
@@ -323,7 +328,11 @@ embassy-crypto-rustcrypto = { workspace = true, features = [
     "embassy-crypto-sha384", "embassy-crypto-sha512",
     "embassy-crypto-aes128-ecb", "embassy-crypto-aes256-ecb",
     "embassy-crypto-p256-arith", "embassy-crypto-p384-arith",
+    "embassy-crypto-p256-ecdsa", "embassy-crypto-p384-ecdsa",
+    "embassy-crypto-p256-ecdh", "embassy-crypto-p384-ecdh",
 ] }
+# The RNG driver the ECDSA drivers draw their nonces from
+embassy-crypto-rand = { workspace = true }
 
 [build-dependencies]
 anyhow = { workspace = true, default-features = true }

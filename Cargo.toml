@@ -30,6 +30,7 @@ embassy-crypto = { version = "0.1", default-features = false }
 # Software `embassy-crypto` drivers, for testing the embassy-crypto hook impls
 # (unpublished; keep on the same revision as the `embassy-crypto` patch below)
 embassy-crypto-rustcrypto = { git = "https://github.com/embassy-rs/embassy", rev = "463a07b963419a1bfe61d5d597c44acb810afb8b", default-features = false }
+embassy-crypto-rand = { git = "https://github.com/embassy-rs/embassy", rev = "463a07b963419a1bfe61d5d597c44acb810afb8b" }
 
 mbedtls-rs-sys = { version = "0.2", path = "mbedtls-rs-sys", default-features = false }
 
