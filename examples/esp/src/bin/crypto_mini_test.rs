@@ -39,11 +39,7 @@ async fn main(_s: Spawner) {
     let peripherals = esp_hal::init(esp_hal::Config::default());
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
-    esp_rtos::start(
-        timg0.timer0,
-        esp_hal::interrupt::software::SoftwareInterruptControl::new(peripherals.SW_INTERRUPT)
-            .software_interrupt0,
-    );
+    esp_rtos::start(timg0.timer0, peripherals.FROM_CPU_INTR0);
 
     let mut sha = ShaBackend::new(peripherals.SHA);
     let _sha_backend = sha.start();
@@ -61,13 +57,10 @@ async fn main(_s: Spawner) {
         info!("============\nInput: {:x?}", input);
 
         {
-            use esp_hal::sha::Digest;
-
             let mut sha1 = esp_hal::sha::Sha1Context::new();
 
-            Digest::update(&mut sha1, input.as_bytes());
-
-            hw_result.copy_from_slice(&sha1.finalize());
+            sha1.update(input.as_bytes()).wait_blocking();
+            sha1.finalize(&mut hw_result).wait_blocking();
         }
         {
             use sha1::Digest;

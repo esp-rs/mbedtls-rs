@@ -56,11 +56,7 @@ async fn main(_s: Spawner) {
     });
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
-    esp_rtos::start(
-        timg0.timer0,
-        esp_hal::interrupt::software::SoftwareInterruptControl::new(peripherals.SW_INTERRUPT)
-            .software_interrupt0,
-    );
+    esp_rtos::start(timg0.timer0, peripherals.FROM_CPU_INTR0);
 
     let mut sw_cycles = [0; 20];
     let mut hw_cycles = [0; 20];

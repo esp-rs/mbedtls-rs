@@ -42,6 +42,8 @@ use esp_radio::wifi::scan::ScanConfig;
 #[cfg(not(feature = "esp32c5"))]
 use esp_radio::wifi::sta::StationConfig;
 #[cfg(not(feature = "esp32c5"))]
+use esp_radio::wifi::AuthenticationMethodConfig;
+#[cfg(not(feature = "esp32c5"))]
 use esp_radio::wifi::Config;
 #[cfg(not(feature = "esp32c5"))]
 use esp_radio::wifi::ControllerConfig;
@@ -78,12 +80,11 @@ const WIFI_PASS: &str = env!("WIFI_PASS");
 #[cfg(not(feature = "esp32c5"))]
 const CURRENT_TIME_MS: &str = env!("CURRENT_TIME_MS");
 
-// esp32c5: esp-hal v1.1 does not yet wire the TRNG (`rng_trng_supported` cfg
-// unset) nor the LP_TIMER driver (`lp_timer_driver_supported` cfg unset), both
-// of which this bootstrap depends on. The c5 path of `bootstrap_stack` therefore
-// panics at runtime per maintainer ask; the rest of the examples crate still
-// builds for c5 so CI catches regressions in the chip-independent code.
-// Re-enable once esp-hal lands the c5 drivers.
+// esp32c5: esp-hal v1.2 does not yet wire the TRNG (`rng_trng_supported` cfg
+// unset), which this bootstrap depends on. The c5 path of `bootstrap_stack`
+// therefore panics at runtime per maintainer ask; the rest of the examples crate
+// still builds for c5 so CI catches regressions in the chip-independent code.
+// Re-enable once esp-hal lands the c5 TRNG driver.
 #[cfg(feature = "esp32c5")]
 pub async fn bootstrap_stack<const SOCKETS: usize>(
     _spawner: Spawner,
@@ -96,7 +97,7 @@ pub async fn bootstrap_stack<const SOCKETS: usize>(
 ) {
     panic!(
         "esp32c5 example bootstrap unsupported: \
-         esp-hal v1.1 lacks TRNG and LP_TIMER drivers for c5"
+         esp-hal v1.2 lacks a TRNG driver for c5"
     );
 }
 
@@ -120,11 +121,7 @@ pub async fn bootstrap_stack<const SOCKETS: usize>(
         esp_hal::init(esp_hal::Config::default().with_cpu_clock(esp_hal::clock::CpuClock::max()));
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
-    esp_rtos::start(
-        timg0.timer0,
-        esp_hal::interrupt::software::SoftwareInterruptControl::new(peripherals.SW_INTERRUPT)
-            .software_interrupt0,
-    );
+    esp_rtos::start(timg0.timer0, peripherals.FROM_CPU_INTR0);
 
     // Create static Embassy timer and "hook it" to mbedtls
     let timer = mk_static!(EmbassyTimer, EmbassyTimer);
@@ -133,7 +130,7 @@ pub async fn bootstrap_stack<const SOCKETS: usize>(
     }
 
     // Setup RTC for EspRtcWallClock
-    let rtc = &*mk_static!(Rtc, Rtc::new(peripherals.LPWR));
+    let rtc = &*mk_static!(Rtc, Rtc::new(peripherals.RTC_TIMER));
 
     // In a real-life scenario NTP or equivalent should be used here to initialize the RTC
     rtc.set_current_time_us(
@@ -170,24 +167,32 @@ pub async fn bootstrap_stack<const SOCKETS: usize>(
 
     let station_config = Config::Station(
         StationConfig::default()
-            .with_ssid(WIFI_SSID)
-            .with_password(WIFI_PASS.into()),
+            .with_ssid(WIFI_SSID.try_into().unwrap())
+            .with_authentication(AuthenticationMethodConfig::Wpa2Personal(
+                WIFI_PASS.try_into().unwrap(),
+            )),
     );
 
     // Configure and start the Wifi first
     info!("Starting wifi");
-    let (mut controller, wifi_interfaces) = esp_radio::wifi::new(
+    let mut controller = WifiController::new(
         peripherals.WIFI,
         ControllerConfig::default().with_initial_config(station_config),
     )
     .unwrap();
+
+    // `esp-radio` defaults to a maximum TX power of only 5dBm, with which the AP
+    // might not hear the station at all (the 4-way handshake then times out with
+    // `AuthenticationExpired`); use ESP-IDF's default of 20dBm instead.
+    controller.set_max_tx_power(80).unwrap();
+
     info!("Wifi configured and started!");
     let config = embassy_net::Config::dhcpv4(Default::default());
 
     let seed = (trng.random() as u64) << 32 | trng.random() as u64;
 
     // Init network stack
-    let (stack, runner) = embassy_net::new(wifi_interfaces.station, config, stack_resources, seed);
+    let (stack, runner) = embassy_net::new(Interface::station(), config, stack_resources, seed);
 
     info!("Scan");
     let scan_config = ScanConfig::default().with_max(10);
@@ -250,6 +255,6 @@ async fn connection(mut controller: WifiController<'static>) {
 
 #[cfg(not(feature = "esp32c5"))]
 #[embassy_executor::task]
-async fn net_task(mut runner: Runner<'static, Interface<'static>>) {
+async fn net_task(mut runner: Runner<'static, Interface>) {
     runner.run().await
 }
