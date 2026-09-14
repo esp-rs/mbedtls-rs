@@ -539,6 +539,7 @@ fn build_config(config: &mut MbedtlsUserConfig, is_active: impl Fn(&str) -> bool
 ///
 /// Reads the environment Cargo sets for the build script, so this must only be
 /// called from within the build script.
+#[allow(unused)]
 pub fn apply_features(config: &mut MbedtlsUserConfig) {
     build_config(config, |feature| {
         std::env::var_os(format!("CARGO_FEATURE_{feature}")).is_some()

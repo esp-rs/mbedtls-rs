@@ -43,6 +43,7 @@ impl MbedtlsUserConfig {
     }
 
     /// Writes the MbedTLS user config to a header file.
+    #[allow(unused)]
     pub(crate) fn write_to_path(&self, path: &Path) -> io::Result<()> {
         let contents = self.to_string();
         fs::write(path, contents)
@@ -52,6 +53,7 @@ impl MbedtlsUserConfig {
     ///
     /// This can be used to manually append the user config to the default
     /// config header file.
+    #[allow(unused)]
     pub(crate) fn append_to_path(&self, path: &Path) -> io::Result<()> {
         let file = fs::OpenOptions::new()
             .append(true)
