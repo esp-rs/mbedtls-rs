@@ -1,6 +1,6 @@
 [package]
 name = "mbedtls-rs-sys"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 links = "mbedtls"
 license = "MIT OR Apache-2.0"
@@ -302,7 +302,7 @@ embassy-time = {workspace = true, optional = true }
 # ESP-IDF: The mbedtls lib distributed with ESP-IDF is used
 # All other platforms: mbedtls libs and bindings are created on the fly
 [target.'cfg(target_os = "espidf")'.dependencies]
-esp-idf-sys = { version = "0.37", default-features = false }
+esp-idf-sys = { version = "0.38", default-features = false }
 
 [dev-dependencies]
 # The hook dispatch uses `critical_section`; provide the std implementation
