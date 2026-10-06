@@ -158,6 +158,45 @@ pub struct Credentials<'a> {
     pub private_key: PrivateKey,
 }
 
+/// A raw verification callback registered through `mbedtls_ssl_conf_verify`,
+/// for callers that supply their own trust store instead of a parsed CA
+/// chain — for example a CA bundle kept in flash and searched on demand.
+///
+/// `f` is invoked by MbedTLS for every certificate in the peer chain after
+/// the standard verification pass, with the accumulated `flags` for that
+/// certificate: returning `0` accepts the certificate as-is, while any
+/// non-zero value aborts the handshake. `p_ctx` is passed back unchanged
+/// and must stay valid (and unmutated from other contexts) for the whole
+/// session lifetime.
+///
+/// Setting this installs a zero-initialized placeholder CA chain — the
+/// callback becomes the only source of trust. On the client it applies to
+/// the server's certificate chain and is mutually exclusive with
+/// `ca_chain` and `skip_hostname_verification`; on the server it applies
+/// to the client's certificate chain (mutual TLS) and is mutually
+/// exclusive with `ca_chain`. The fields share the same single
+/// configuration slots.
+#[derive(Debug, Clone, Copy)]
+pub struct VerifyCallback {
+    /// The callback passed to `mbedtls_ssl_conf_verify`.
+    pub f: unsafe extern "C" fn(
+        p_ctx: *mut c_void,
+        crt: *mut mbedtls_x509_crt,
+        depth: c_int,
+        flags: *mut u32,
+    ) -> c_int,
+    /// Opaque context pointer handed back to `f` on every call.
+    pub p_ctx: *mut c_void,
+}
+
+// The raw pointers are opaque to defmt; format only the type name.
+#[cfg(feature = "defmt")]
+impl defmt::Format for VerifyCallback {
+    fn format(&self, f: defmt::Formatter) {
+        defmt::write!(f, "VerifyCallback");
+    }
+}
+
 /// Configuration for a TLS session
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -193,6 +232,14 @@ pub struct ClientSessionConfig<'a> {
     pub skip_hostname_verification: bool,
     /// Ordered key-exchange groups to offer. `None` keeps Mbed TLS's defaults.
     pub key_exchange_groups: Option<&'a [TlsGroup]>,
+    /// Trust store provided as a raw verification callback instead of a
+    /// parsed `ca_chain`: lets the caller keep trusted roots in flash (for
+    /// example an esp-idf-style CA bundle) and only materialize the root
+    /// the peer chain actually needs.
+    ///
+    /// Mutually exclusive with `ca_chain` and with
+    /// `skip_hostname_verification` (all three feed the same slots).
+    pub verify_callback: Option<VerifyCallback>,
 }
 
 impl<'a> Default for ClientSessionConfig<'a> {
@@ -213,6 +260,7 @@ impl<'a> ClientSessionConfig<'a> {
             alpn_protocols: None,
             skip_hostname_verification: false,
             key_exchange_groups: None,
+            verify_callback: None,
         }
     }
 }
@@ -266,6 +314,17 @@ pub struct ServerSessionConfig<'a> {
     pub min_version: TlsVersion,
     /// ALPN protocols
     pub alpn_protocols: Option<&'a [&'a CStr]>,
+    /// Trust store provided as a raw verification callback instead of a
+    /// parsed `ca_chain`, for verifying the client's certificate chain in
+    /// mutual TLS — the server-side counterpart of
+    /// [`ClientSessionConfig::verify_callback`].
+    ///
+    /// A server configured with a callback sends an empty acceptable-CA
+    /// list in its CertificateRequest (the same trade-off Mbed TLS
+    /// documents for its own CA-callback API).
+    ///
+    /// Mutually exclusive with `ca_chain` (both feed the same slot).
+    pub verify_callback: Option<VerifyCallback>,
 }
 
 impl<'a> ServerSessionConfig<'a> {
@@ -276,6 +335,7 @@ impl<'a> ServerSessionConfig<'a> {
             auth_mode: AuthMode::None,
             min_version: TlsVersion::Tls1_2,
             alpn_protocols: None,
+            verify_callback: None,
         }
     }
 }
@@ -338,6 +398,27 @@ impl<'a> SessionConfig<'a> {
                 ..
             }) => *key_exchange_groups,
             SessionConfig::Server { .. } => None,
+        }
+    }
+
+    fn verify_callback(&self) -> Option<VerifyCallback> {
+        match self {
+            SessionConfig::Client(ClientSessionConfig {
+                verify_callback, ..
+            })
+            | SessionConfig::Server(ServerSessionConfig {
+                verify_callback, ..
+            }) => *verify_callback,
+        }
+    }
+
+    fn skip_hostname_verification(&self) -> bool {
+        match self {
+            SessionConfig::Client(ClientSessionConfig {
+                skip_hostname_verification,
+                ..
+            }) => *skip_hostname_verification,
+            SessionConfig::Server { .. } => false,
         }
     }
 
@@ -447,6 +528,16 @@ struct SessionState<'a> {
     _group_ids: Option<GroupArray>,
 }
 
+/// Placeholder CA chain for [`VerifyCallback`] sessions: zero-initialized,
+/// it only satisfies the client handshake's non-NULL CA-chain check and
+/// never matches a peer chain (all names and keys are empty). Mirrors
+/// esp-idf `esp_crt_bundle`'s dummy certificate.
+struct DummyCrt(mbedtls_x509_crt);
+// Only ever read through MbedTLS's chain walk.
+unsafe impl Sync for DummyCrt {}
+
+static DUMMY_CRT: DummyCrt = DummyCrt(unsafe { core::mem::zeroed() });
+
 impl<'a> SessionState<'a> {
     /// Initialize the Session state using the given configuration
     fn new(conf: &SessionConfig<'a>) -> Result<Self, MbedtlsError> {
@@ -487,7 +578,33 @@ impl<'a> SessionState<'a> {
             })?;
         }
 
-        if let Some(ca_chain) = conf.ca_chain() {
+        let verify_callback = conf.verify_callback();
+        if verify_callback.is_some()
+            && (conf.ca_chain().is_some() || conf.skip_hostname_verification())
+        {
+            // `verify_callback`, `ca_chain` and `skip_hostname_verification`
+            // all feed the same `mbedtls_ssl_config` slots; combining them
+            // would silently drop one of the trust sources.
+            return Err(MbedtlsError::new(MBEDTLS_ERR_SSL_BAD_INPUT_DATA));
+        }
+        if let Some(callback) = verify_callback {
+            unsafe {
+                // A placeholder CA chain is still required: the handshake's
+                // "no CA chain" check counts the CA chain, not the verify
+                // callback, so without one a session with
+                // `AuthMode::Required` aborts before certificate
+                // verification runs. The zero-initialized certificate never
+                // matches a peer chain; trust is decided exclusively by the
+                // callback. (Same trick as esp-idf `esp_crt_bundle`'s dummy
+                // certificate.)
+                mbedtls_ssl_conf_ca_chain(
+                    &mut *ssl_config,
+                    &DUMMY_CRT.0 as *const _ as *mut _,
+                    core::ptr::null_mut(),
+                );
+                mbedtls_ssl_conf_verify(&mut *ssl_config, Some(callback.f), callback.p_ctx);
+            }
+        } else if let Some(ca_chain) = conf.ca_chain() {
             unsafe {
                 mbedtls_ssl_conf_ca_chain(
                     &mut *ssl_config,
