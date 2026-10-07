@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 * (Breaking) Add a `tls-sni` feature. The `tls` bundle (and so the default features) include it; a build that uses `--no-default-features` no longer sends the Server Name Indication extension unless it enables `tls-sni`. `ClientSessionConfig::server_name` still sets the name the certificate is verified against
+* Add `PrivateKey::warm`: performs one private-key operation up front, so the RSA blinding setup that MbedTLS otherwise does inside the first handshake (over a second on a small MCU) happens at a moment the application chooses
 
 ## [0.3.0] - 2026-09-14
 * Update MSRV to 1.85 due to `rand_core` 0.10

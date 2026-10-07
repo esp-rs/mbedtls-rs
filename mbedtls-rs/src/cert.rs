@@ -2,7 +2,7 @@ use core::ffi::CStr;
 use core::marker::PhantomData;
 
 use super::sys::*;
-use super::{MRc, SessionError};
+use super::{MRc, SessionError, TlsReference};
 
 /// Holds a reference to a PEM or DER-encoded X509 certificate or private key.
 ///
@@ -101,6 +101,52 @@ impl<'d> Certificate<'d> {
 pub struct PrivateKey(pub(crate) MRc<mbedtls_pk_context>);
 
 impl PrivateKey {
+    /// Perform one private-key operation and discard the result.
+    ///
+    /// MbedTLS sets up RSA blinding on the first private operation of a freshly parsed key,
+    /// using a constant-time modular inverse that can take over a second on a small MCU.
+    /// Later operations on the same key only update the blinding values. Calling this ahead
+    /// of the first handshake moves that setup out of the handshake, for instance to a moment
+    /// the application spends waiting for the network anyway.
+    ///
+    /// The signature is written to `signature` and otherwise ignored, so the call is safe to
+    /// repeat. The buffer must hold a signature for this key: the key's size in bytes for RSA
+    /// (512 for a 4096-bit key), or a DER-encoded ECDSA signature for EC keys (at most 141
+    /// bytes, for P-521). A buffer that is too small returns an error.
+    ///
+    /// Call this before the key is cloned or given to a session: the operation updates the
+    /// key's blinding values in place.
+    ///
+    /// The [`TlsReference`] proves that the RNG the operation draws on has been registered.
+    pub fn warm(
+        &mut self,
+        signature: &mut [u8],
+        _tls: TlsReference<'_>,
+    ) -> Result<(), MbedtlsError> {
+        let digest = [0x5a_u8; 32];
+        let mut written = 0_usize;
+
+        // SAFETY: the context was parsed by `new`; MbedTLS only updates its blinding values here,
+        // and `&mut self` plus the documented call order keep clones from reading it meanwhile.
+        // Both buffers outlive the call. `mbedtls_rng` ignores its context pointer and draws on
+        // the RNG `Tls::new` registered, which `_tls` proves exists.
+        merr!(unsafe {
+            mbedtls_pk_sign(
+                self.0.as_mut_ptr(),
+                mbedtls_md_type_t_MBEDTLS_MD_SHA256,
+                digest.as_ptr(),
+                digest.len(),
+                signature.as_mut_ptr(),
+                signature.len(),
+                &mut written,
+                Some(crate::mbedtls_rng),
+                core::ptr::null_mut(),
+            )
+        })?;
+
+        Ok(())
+    }
+
     /// Parse an X509 private key into RAM and returns a wrapped pointer if successful.
     ///
     /// # Arguments
