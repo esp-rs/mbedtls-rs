@@ -97,6 +97,10 @@ rusup default esp
 
 A basic TLS (HTTPS) client demonstrating a TLS and an mTLS client
 
+### verify_callback
+
+A TLS (HTTPS) client whose trust store is plugged in through `ClientSessionConfig::verify_callback` instead of a parsed `ca_chain`: a sample verification callback (esp-idf `esp_crt_bundle` style) turns a root found in the store into trust
+
 ### server
 
 A basic TLS (HTTPS) server with a self-signed certificate
