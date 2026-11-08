@@ -172,6 +172,11 @@ pub struct Credentials<'a> {
 /// valid (and unmutated from other contexts) for the whole session
 /// lifetime.
 ///
+/// With the `hook-wall-clock` feature, if the wall clock gives no time,
+/// MbedTLS aborts the chain verification with `MBEDTLS_ERR_X509_FATAL_ERROR`
+/// before it calls `f`. Thus, without a clock, the callback cannot accept a
+/// certificate.
+///
 /// Without `ca_chain`, setting this installs a zero-initialized placeholder
 /// CA chain, and the callback is the only source of trust. With `ca_chain`,
 /// MbedTLS verifies the peer chain against it as usual, and the callback
