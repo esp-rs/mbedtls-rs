@@ -15,7 +15,8 @@ use mbedtls_rs::blocking::io::{ErrorKind, ErrorType, Read, Write};
 use mbedtls_rs::blocking::Session;
 use mbedtls_rs::sys::{
     mbedtls_x509_crt, MbedtlsError, MBEDTLS_ERR_SSL_BAD_INPUT_DATA,
-    MBEDTLS_ERR_X509_CERT_VERIFY_FAILED, MBEDTLS_X509_BADCERT_CN_MISMATCH,
+    MBEDTLS_ERR_X509_CERT_VERIFY_FAILED, MBEDTLS_ERR_X509_FATAL_ERROR,
+    MBEDTLS_X509_BADCERT_CN_MISMATCH,
 };
 use mbedtls_rs::{
     Certificate, ClientSessionConfig, Credentials, PrivateKey, ServerSessionConfig, SessionConfig,
@@ -144,7 +145,11 @@ unsafe extern "C" fn observe(
     flags: *mut u32,
 ) -> c_int {
     let observer = unsafe { &*(p_ctx as *const Observer) };
-    observer.seen.borrow_mut().push((depth, unsafe { *flags }));
+    // No panic path: a panic cannot unwind out of an `extern "C"` function.
+    let Ok(mut seen) = observer.seen.try_borrow_mut() else {
+        return MBEDTLS_ERR_X509_FATAL_ERROR;
+    };
+    seen.push((depth, unsafe { *flags }));
     if observer.clear_cn_mismatch && depth == 0 {
         unsafe { *flags &= !MBEDTLS_X509_BADCERT_CN_MISMATCH };
     }
