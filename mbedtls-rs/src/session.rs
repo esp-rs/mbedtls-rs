@@ -160,22 +160,39 @@ pub struct Credentials<'a> {
 
 /// A raw verification callback registered through `mbedtls_ssl_conf_verify`,
 /// for callers that supply their own trust store instead of a parsed CA
-/// chain — for example a CA bundle kept in flash and searched on demand.
+/// chain — for example a CA bundle kept in flash and searched on demand —
+/// or that examine the peer chain in addition to a parsed CA chain.
 ///
-/// `f` is invoked by MbedTLS for every certificate in the peer chain after
-/// the standard verification pass, with the accumulated `flags` for that
-/// certificate: returning `0` accepts the certificate as-is, while any
-/// non-zero value aborts the handshake. `p_ctx` is passed back unchanged
-/// and must stay valid (and unmutated from other contexts) for the whole
-/// session lifetime.
+/// `f` is called by MbedTLS after the standard verification pass for every
+/// certificate of the verified chain, from the top down to the leaf at depth
+/// 0, with the accumulated `flags` for that certificate. With `ca_chain`, the
+/// top certificate can be the trusted root from `ca_chain`, even if the peer
+/// did not send it. Returning `0` keeps the verdict that `*flags` holds after
+/// the call: with [AuthMode::Required], the handshake fails if a flag is
+/// left set on any certificate of the chain. Any non-zero return value
+/// aborts the handshake. `p_ctx` is passed back unchanged and must stay
+/// valid (and unmutated from other contexts) for the whole session
+/// lifetime.
 ///
-/// Setting this installs a zero-initialized placeholder CA chain — the
-/// callback becomes the only source of trust. On the client it applies to
-/// the server's certificate chain and is mutually exclusive with
-/// `ca_chain` and `skip_hostname_verification`; on the server it applies
-/// to the client's certificate chain (mutual TLS) and is mutually
-/// exclusive with `ca_chain`. The fields share the same single
-/// configuration slots.
+/// After the callback, the TLS layer also checks the key usage extensions of
+/// the leaf and, with TLS 1.2, the curve of its EC key. The callback does not
+/// see the flags of these checks and cannot clear them.
+///
+/// With the `hook-wall-clock` feature, if the wall clock gives no time,
+/// MbedTLS aborts the chain verification with `MBEDTLS_ERR_X509_FATAL_ERROR`
+/// before it calls `f`. Thus, without a clock, the callback cannot accept a
+/// certificate.
+///
+/// Without `ca_chain`, setting this installs a zero-initialized placeholder
+/// CA chain, and the callback is the only source of trust. With `ca_chain`,
+/// MbedTLS verifies the peer chain against it as usual, and the callback
+/// gets the result of that verification in `flags`.
+///
+/// On the client it applies to the server's certificate chain and is
+/// mutually exclusive with `skip_hostname_verification`, which uses the same
+/// configuration slot (clear `MBEDTLS_X509_BADCERT_CN_MISMATCH` in the
+/// callback instead). On the server it applies to the client's certificate
+/// chain (mutual TLS).
 #[derive(Debug, Clone, Copy)]
 pub struct VerifyCallback {
     /// The callback passed to `mbedtls_ssl_conf_verify`.
@@ -232,13 +249,15 @@ pub struct ClientSessionConfig<'a> {
     pub skip_hostname_verification: bool,
     /// Ordered key-exchange groups to offer. `None` keeps Mbed TLS's defaults.
     pub key_exchange_groups: Option<&'a [TlsGroup]>,
-    /// Trust store provided as a raw verification callback instead of a
-    /// parsed `ca_chain`: lets the caller keep trusted roots in flash (for
-    /// example an esp-idf-style CA bundle) and only materialize the root
-    /// the peer chain actually needs.
+    /// Raw verification callback, see [VerifyCallback]. Without `ca_chain`
+    /// it is the trust store: it lets the caller keep trusted roots in flash
+    /// (for example an esp-idf-style CA bundle) and only materialize the
+    /// root the peer chain actually needs. With `ca_chain` it gets the
+    /// verdict of the standard verification, for example to record or pin
+    /// the server's public key.
     ///
-    /// Mutually exclusive with `ca_chain` and with
-    /// `skip_hostname_verification` (all three feed the same slots).
+    /// Mutually exclusive with `skip_hostname_verification` (both feed the
+    /// same slot).
     pub verify_callback: Option<VerifyCallback>,
 }
 
@@ -314,16 +333,13 @@ pub struct ServerSessionConfig<'a> {
     pub min_version: TlsVersion,
     /// ALPN protocols
     pub alpn_protocols: Option<&'a [&'a CStr]>,
-    /// Trust store provided as a raw verification callback instead of a
-    /// parsed `ca_chain`, for verifying the client's certificate chain in
+    /// Raw verification callback for the client's certificate chain in
     /// mutual TLS — the server-side counterpart of
-    /// [`ClientSessionConfig::verify_callback`].
+    /// [`ClientSessionConfig::verify_callback`], see [VerifyCallback].
     ///
-    /// A server configured with a callback sends an empty acceptable-CA
-    /// list in its CertificateRequest (the same trade-off Mbed TLS
-    /// documents for its own CA-callback API).
-    ///
-    /// Mutually exclusive with `ca_chain` (both feed the same slot).
+    /// A server configured with a callback and without `ca_chain` sends an
+    /// empty acceptable-CA list in its CertificateRequest (the same
+    /// trade-off Mbed TLS documents for its own CA-callback API).
     pub verify_callback: Option<VerifyCallback>,
 }
 
@@ -528,10 +544,10 @@ struct SessionState<'a> {
     _group_ids: Option<GroupArray>,
 }
 
-/// Placeholder CA chain for [`VerifyCallback`] sessions: zero-initialized,
-/// it only satisfies the client handshake's non-NULL CA-chain check and
-/// never matches a peer chain (all names and keys are empty). Mirrors
-/// esp-idf `esp_crt_bundle`'s dummy certificate.
+/// Placeholder CA chain for [`VerifyCallback`] sessions without `ca_chain`:
+/// zero-initialized, it only satisfies the client handshake's non-NULL
+/// CA-chain check and never matches a peer chain (all names and keys are
+/// empty). Mirrors esp-idf `esp_crt_bundle`'s dummy certificate.
 struct DummyCrt(mbedtls_x509_crt);
 // Only ever read through MbedTLS's chain walk.
 unsafe impl Sync for DummyCrt {}
@@ -579,15 +595,20 @@ impl<'a> SessionState<'a> {
         }
 
         let verify_callback = conf.verify_callback();
-        if verify_callback.is_some()
-            && (conf.ca_chain().is_some() || conf.skip_hostname_verification())
-        {
-            // `verify_callback`, `ca_chain` and `skip_hostname_verification`
-            // all feed the same `mbedtls_ssl_config` slots; combining them
-            // would silently drop one of the trust sources.
+        if verify_callback.is_some() && conf.skip_hostname_verification() {
+            // Both feed the same `mbedtls_ssl_conf_verify` slot; combining
+            // them would silently drop one of the callbacks.
             return Err(MbedtlsError::new(MBEDTLS_ERR_SSL_BAD_INPUT_DATA));
         }
-        if let Some(callback) = verify_callback {
+        if let Some(ca_chain) = conf.ca_chain() {
+            unsafe {
+                mbedtls_ssl_conf_ca_chain(
+                    &mut *ssl_config,
+                    &*ca_chain.crt as *const _ as *mut _,
+                    core::ptr::null_mut(),
+                );
+            }
+        } else if verify_callback.is_some() {
             unsafe {
                 // A placeholder CA chain is still required: the handshake's
                 // "no CA chain" check counts the CA chain, not the verify
@@ -602,15 +623,11 @@ impl<'a> SessionState<'a> {
                     &DUMMY_CRT.0 as *const _ as *mut _,
                     core::ptr::null_mut(),
                 );
-                mbedtls_ssl_conf_verify(&mut *ssl_config, Some(callback.f), callback.p_ctx);
             }
-        } else if let Some(ca_chain) = conf.ca_chain() {
+        }
+        if let Some(callback) = verify_callback {
             unsafe {
-                mbedtls_ssl_conf_ca_chain(
-                    &mut *ssl_config,
-                    &*ca_chain.crt as *const _ as *mut _,
-                    core::ptr::null_mut(),
-                );
+                mbedtls_ssl_conf_verify(&mut *ssl_config, Some(callback.f), callback.p_ctx);
             }
         }
 
