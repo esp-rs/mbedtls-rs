@@ -16,7 +16,7 @@ use mbedtls_rs::blocking::Session;
 use mbedtls_rs::sys::{
     mbedtls_x509_crt, MbedtlsError, MBEDTLS_ERR_SSL_BAD_INPUT_DATA,
     MBEDTLS_ERR_X509_CERT_VERIFY_FAILED, MBEDTLS_ERR_X509_FATAL_ERROR,
-    MBEDTLS_X509_BADCERT_CN_MISMATCH,
+    MBEDTLS_X509_BADCERT_CN_MISMATCH, MBEDTLS_X509_BADCERT_NOT_TRUSTED,
 };
 use mbedtls_rs::{
     Certificate, ClientSessionConfig, Credentials, PrivateKey, ServerSessionConfig, SessionConfig,
@@ -117,15 +117,16 @@ impl Write for TcpEndpoint {
 
 /// What the callback does with the flags it gets, and what it saw.
 struct Observer {
-    clear_cn_mismatch: bool,
+    /// The flags that the callback clears at depth 0.
+    clear: u32,
     /// `(depth, flags as received)` for every call.
     seen: RefCell<Vec<(c_int, u32)>>,
 }
 
 impl Observer {
-    fn new(clear_cn_mismatch: bool) -> Self {
+    fn new(clear: u32) -> Self {
         Self {
-            clear_cn_mismatch,
+            clear,
             seen: RefCell::new(Vec::new()),
         }
     }
@@ -150,8 +151,8 @@ unsafe extern "C" fn observe(
         return MBEDTLS_ERR_X509_FATAL_ERROR;
     };
     seen.push((depth, unsafe { *flags }));
-    if observer.clear_cn_mismatch && depth == 0 {
-        unsafe { *flags &= !MBEDTLS_X509_BADCERT_CN_MISMATCH };
+    if depth == 0 {
+        unsafe { *flags &= !observer.clear };
     }
     0
 }
@@ -172,12 +173,13 @@ fn idle_session(config: &SessionConfig<'_>) -> Result<(), SessionError> {
 }
 
 /// Runs a real handshake against the fixture server and echoes a payload. The
-/// client trusts the fixture certificate through `ca_chain` and has a
-/// verify callback. Returns the client's handshake result and what the
-/// callback saw.
+/// client has a verify callback that clears `clear` at depth 0 and, if
+/// `ca_chain` is true, trusts the fixture certificate through `ca_chain`.
+/// Returns the client's handshake result and what the callback saw.
 fn handshake(
+    ca_chain: bool,
     server_name: &'static CStr,
-    clear_cn_mismatch: bool,
+    clear: u32,
 ) -> (Result<(), SessionError>, Vec<(c_int, u32)>) {
     let _serial = serialize_tls_lifetimes();
     let mut rng = StdRng;
@@ -207,9 +209,9 @@ fn handshake(
             let _ = client_done_receiver.recv();
         });
         let client = scope.spawn(move || {
-            let observer = Observer::new(clear_cn_mismatch);
+            let observer = Observer::new(clear);
             let config = SessionConfig::Client(ClientSessionConfig {
-                ca_chain: Some(Certificate::new_no_copy(CERTIFICATE).unwrap()),
+                ca_chain: ca_chain.then(|| Certificate::new_no_copy(CERTIFICATE).unwrap()),
                 server_name: Some(server_name),
                 verify_callback: Some(observer.callback()),
                 ..ClientSessionConfig::new()
@@ -237,7 +239,7 @@ fn handshake(
 #[test]
 fn client_verify_callback_with_ca_chain_is_accepted() {
     let _serial = serialize_tls_lifetimes();
-    let observer = Observer::new(false);
+    let observer = Observer::new(0);
     let config = SessionConfig::Client(ClientSessionConfig {
         ca_chain: Some(Certificate::new_no_copy(CERTIFICATE).unwrap()),
         verify_callback: Some(observer.callback()),
@@ -252,7 +254,7 @@ fn client_verify_callback_with_ca_chain_is_accepted() {
 #[test]
 fn server_verify_callback_with_ca_chain_is_accepted() {
     let _serial = serialize_tls_lifetimes();
-    let observer = Observer::new(false);
+    let observer = Observer::new(0);
     let SessionConfig::Server(mut server) = server_config() else {
         unreachable!()
     };
@@ -267,7 +269,7 @@ fn server_verify_callback_with_ca_chain_is_accepted() {
 #[test]
 fn verify_callback_with_skip_hostname_verification_is_rejected() {
     let _serial = serialize_tls_lifetimes();
-    let observer = Observer::new(false);
+    let observer = Observer::new(0);
     let config = SessionConfig::Client(ClientSessionConfig {
         skip_hostname_verification: true,
         verify_callback: Some(observer.callback()),
@@ -283,11 +285,12 @@ fn verify_callback_with_skip_hostname_verification_is_rejected() {
 }
 
 /// The callback gets the verdict of the verification against `ca_chain`: no
-/// flags for a certificate that `ca_chain` trusts (the placeholder CA chain
-/// would give `MBEDTLS_X509_BADCERT_NOT_TRUSTED` here).
+/// flags for a certificate that `ca_chain` trusts. Without `ca_chain`, the
+/// same certificate gets `MBEDTLS_X509_BADCERT_NOT_TRUSTED`, see
+/// `callback_alone_gets_not_trusted_from_the_placeholder_ca_chain`.
 #[test]
 fn callback_gets_the_ca_chain_verdict() {
-    let (result, seen) = handshake(c"mbedtls-rs.local", false);
+    let (result, seen) = handshake(true, c"mbedtls-rs.local", 0);
 
     assert_eq!(result, Ok(()));
     assert_eq!(seen, [(0, 0)]);
@@ -297,7 +300,7 @@ fn callback_gets_the_ca_chain_verdict() {
 /// verification against `ca_chain`.
 #[test]
 fn ca_chain_verdict_stands_when_the_callback_keeps_the_flags() {
-    let (result, seen) = handshake(c"other.local", false);
+    let (result, seen) = handshake(true, c"other.local", 0);
 
     assert_eq!(
         result,
@@ -312,8 +315,34 @@ fn ca_chain_verdict_stands_when_the_callback_keeps_the_flags() {
 /// (in place of `skip_hostname_verification`).
 #[test]
 fn callback_can_clear_a_flag_of_the_ca_chain_verdict() {
-    let (result, seen) = handshake(c"other.local", true);
+    let (result, seen) = handshake(true, c"other.local", MBEDTLS_X509_BADCERT_CN_MISMATCH);
 
     assert_eq!(result, Ok(()));
     assert_eq!(seen, [(0, MBEDTLS_X509_BADCERT_CN_MISMATCH)]);
+}
+
+/// Without `ca_chain`, the callback gets the verdict against the placeholder
+/// CA chain: the fixture certificate is not trusted, and the handshake fails
+/// if the callback keeps the flag. This is the behavior of #187.
+#[test]
+fn callback_alone_gets_not_trusted_from_the_placeholder_ca_chain() {
+    let (result, seen) = handshake(false, c"mbedtls-rs.local", 0);
+
+    assert_eq!(
+        result,
+        Err(SessionError::MbedTls(MbedtlsError::new(
+            MBEDTLS_ERR_X509_CERT_VERIFY_FAILED
+        )))
+    );
+    assert_eq!(seen, [(0, MBEDTLS_X509_BADCERT_NOT_TRUSTED)]);
+}
+
+/// Without `ca_chain`, the callback is the only source of trust: when it
+/// clears `MBEDTLS_X509_BADCERT_NOT_TRUSTED`, the handshake completes.
+#[test]
+fn callback_alone_can_accept_the_certificate() {
+    let (result, seen) = handshake(false, c"mbedtls-rs.local", MBEDTLS_X509_BADCERT_NOT_TRUSTED);
+
+    assert_eq!(result, Ok(()));
+    assert_eq!(seen, [(0, MBEDTLS_X509_BADCERT_NOT_TRUSTED)]);
 }

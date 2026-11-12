@@ -163,14 +163,20 @@ pub struct Credentials<'a> {
 /// chain — for example a CA bundle kept in flash and searched on demand —
 /// or that examine the peer chain in addition to a parsed CA chain.
 ///
-/// `f` is invoked by MbedTLS for every certificate in the peer chain after
-/// the standard verification pass, with the accumulated `flags` for that
-/// certificate. Returning `0` keeps the verdict that `*flags` holds after
+/// `f` is called by MbedTLS after the standard verification pass for every
+/// certificate of the verified chain, from the top down to the leaf at depth
+/// 0, with the accumulated `flags` for that certificate. With `ca_chain`, the
+/// top certificate can be the trusted root from `ca_chain`, even if the peer
+/// did not send it. Returning `0` keeps the verdict that `*flags` holds after
 /// the call: with [AuthMode::Required], the handshake fails if a flag is
 /// left set on any certificate of the chain. Any non-zero return value
 /// aborts the handshake. `p_ctx` is passed back unchanged and must stay
 /// valid (and unmutated from other contexts) for the whole session
 /// lifetime.
+///
+/// After the callback, the TLS layer also checks the key usage extensions of
+/// the leaf and, with TLS 1.2, the curve of its EC key. The callback does not
+/// see the flags of these checks and cannot clear them.
 ///
 /// With the `hook-wall-clock` feature, if the wall clock gives no time,
 /// MbedTLS aborts the chain verification with `MBEDTLS_ERR_X509_FATAL_ERROR`
@@ -538,10 +544,10 @@ struct SessionState<'a> {
     _group_ids: Option<GroupArray>,
 }
 
-/// Placeholder CA chain for [`VerifyCallback`] sessions: zero-initialized,
-/// it only satisfies the client handshake's non-NULL CA-chain check and
-/// never matches a peer chain (all names and keys are empty). Mirrors
-/// esp-idf `esp_crt_bundle`'s dummy certificate.
+/// Placeholder CA chain for [`VerifyCallback`] sessions without `ca_chain`:
+/// zero-initialized, it only satisfies the client handshake's non-NULL
+/// CA-chain check and never matches a peer chain (all names and keys are
+/// empty). Mirrors esp-idf `esp_crt_bundle`'s dummy certificate.
 struct DummyCrt(mbedtls_x509_crt);
 // Only ever read through MbedTLS's chain walk.
 unsafe impl Sync for DummyCrt {}
