@@ -16,6 +16,9 @@ use std::sync::Mutex;
 
 use mbedtls_rs_sys::*;
 
+#[path = "support/psa_random.rs"]
+mod psa_random;
+
 /// The MbedTLS self-tests are not thread-safe (e.g. the ECP self-test
 /// compares global operation counters that other concurrently-running ECP
 /// users would skew), so serialize them.
