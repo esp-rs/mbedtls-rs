@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+* Support the `*-windows-msvc` targets: MbedTLS is compiled on the fly with clang, as for other targets
+* On ESP-IDF, pass ESP-IDF's configuration on to dependents (`DEP_MBEDTLS_EMBUILD_CFG_ARGS`)
 * (Breaking) Add a `tls-sni` feature for `MBEDTLS_SSL_SERVER_NAME_INDICATION`, which `tls-core` no longer enables. The `tls` bundle (and so the default features) include it, so only builds that select `tls-core` on its own need to add `tls-sni` to keep sending the server name
 
 ## [0.3.1] - 2026-09-15

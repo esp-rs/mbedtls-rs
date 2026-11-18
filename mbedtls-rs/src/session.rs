@@ -1,4 +1,4 @@
-use core::ffi::{c_char, c_int, c_void, CStr};
+use core::ffi::{c_char, c_int, c_uchar, c_void, CStr};
 use core::marker::PhantomData;
 use core::ptr::NonNull;
 
@@ -14,6 +14,11 @@ pub use asynch::*;
 
 mod asynch;
 pub mod blocking;
+#[cfg(any(
+    all(not(target_os = "espidf"), feature = "tls-proto-dtls"),
+    esp_idf_mbedtls_ssl_proto_dtls
+))]
+pub mod dtls;
 
 /// An owned, nul-terminated server name allocated through MbedTLS's allocator
 /// (`mbedtls_calloc`/`mbedtls_free`), so it honours a user-overridden MbedTLS
@@ -158,6 +163,94 @@ pub struct Credentials<'a> {
     pub private_key: PrivateKey,
 }
 
+/// How a session proves to its peer who it is.
+///
+/// Its `Debug` output leaves the secrets out.
+#[derive(Clone)]
+pub enum Authentication<'a> {
+    /// A certificate (chain) and its private key.
+    Certificate(Credentials<'a>),
+    /// The password of an EC J-PAKE handshake, shared with the peer, as in
+    /// Thread commissioning. The session then offers only
+    /// `TLS_ECJPAKE_WITH_AES_128_CCM_8`, with TLS 1.2: the peers authenticate
+    /// each other with the password, without certificates.
+    ///
+    /// With the `kex-ecjpake` feature; on ESP-IDF, with
+    /// `CONFIG_MBEDTLS_KEY_EXCHANGE_ECJPAKE`.
+    #[cfg(any(
+        all(not(target_os = "espidf"), feature = "kex-ecjpake"),
+        esp_idf_mbedtls_key_exchange_ecjpake
+    ))]
+    EcJpake(&'a [u8]),
+    /// A pre-shared key, and the identity that names it. The session then
+    /// offers only the cipher suites of pre-shared keys: ECDHE-PSK, which has
+    /// forward secrecy, then DHE-PSK, then plain PSK; and with TLS 1.3, its
+    /// PSK modes. A server takes only a client that sends `identity`.
+    ///
+    /// The key must be random, not a password: a recorded handshake lets
+    /// anyone test guesses of it offline. For passwords, see `EcJpake`.
+    ///
+    /// TLS 1.2 and DTLS need the `kex-ecdhe-psk` or `kex-psk` feature (the
+    /// `tls` bundle has both). On ESP-IDF, PSK needs
+    /// `CONFIG_MBEDTLS_PSK_MODES`.
+    #[cfg(any(not(target_os = "espidf"), esp_idf_mbedtls_psk_modes))]
+    Psk {
+        /// The name of the key, which the client sends in the clear.
+        identity: &'a [u8],
+        /// The key.
+        key: &'a [u8],
+    },
+    /// Server only: pre-shared keys, one for each client, looked up by the
+    /// identity that the client sends; see [`PskCallback`]. As with `Psk`,
+    /// the session offers only the cipher suites of pre-shared keys.
+    #[cfg(any(not(target_os = "espidf"), esp_idf_mbedtls_psk_modes))]
+    PskLookup(PskCallback),
+}
+
+impl<'a> From<Credentials<'a>> for Authentication<'a> {
+    fn from(creds: Credentials<'a>) -> Self {
+        Self::Certificate(creds)
+    }
+}
+
+impl core::fmt::Debug for Authentication<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Certificate(creds) => f.debug_tuple("Certificate").field(creds).finish(),
+            #[cfg(any(
+                all(not(target_os = "espidf"), feature = "kex-ecjpake"),
+                esp_idf_mbedtls_key_exchange_ecjpake
+            ))]
+            Self::EcJpake(_) => f.write_str("EcJpake(..)"),
+            #[cfg(any(not(target_os = "espidf"), esp_idf_mbedtls_psk_modes))]
+            Self::Psk { identity, .. } => f
+                .debug_struct("Psk")
+                .field("identity", identity)
+                .finish_non_exhaustive(),
+            #[cfg(any(not(target_os = "espidf"), esp_idf_mbedtls_psk_modes))]
+            Self::PskLookup(callback) => f.debug_tuple("PskLookup").field(callback).finish(),
+        }
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl defmt::Format for Authentication<'_> {
+    fn format(&self, f: defmt::Formatter<'_>) {
+        match self {
+            Self::Certificate(creds) => defmt::write!(f, "Certificate({})", creds),
+            #[cfg(any(
+                all(not(target_os = "espidf"), feature = "kex-ecjpake"),
+                esp_idf_mbedtls_key_exchange_ecjpake
+            ))]
+            Self::EcJpake(_) => defmt::write!(f, "EcJpake(..)"),
+            #[cfg(any(not(target_os = "espidf"), esp_idf_mbedtls_psk_modes))]
+            Self::Psk { identity, .. } => defmt::write!(f, "Psk {{ identity: {}, .. }}", identity),
+            #[cfg(any(not(target_os = "espidf"), esp_idf_mbedtls_psk_modes))]
+            Self::PskLookup(callback) => defmt::write!(f, "PskLookup({})", callback),
+        }
+    }
+}
+
 /// A raw verification callback registered through `mbedtls_ssl_conf_verify`,
 /// for callers that supply their own trust store instead of a parsed CA
 /// chain — for example a CA bundle kept in flash and searched on demand —
@@ -214,6 +307,41 @@ impl defmt::Format for VerifyCallback {
     }
 }
 
+/// A raw lookup of pre-shared keys registered through
+/// `mbedtls_ssl_conf_psk_cb`, for a server with a key for each client (see
+/// [`Authentication::PskLookup`]).
+///
+/// `f` is called by MbedTLS during the handshake, with the identity that the
+/// client sent. If it knows the identity, it sets the identity's key with
+/// `mbedtls_ssl_set_hs_psk(ssl, key, key_len)` and returns `0`. Any other
+/// return value ends the handshake: an unknown identity. `p_ctx` is passed
+/// back unchanged and must stay valid (and unmutated from other contexts)
+/// for the whole session lifetime.
+#[cfg(any(not(target_os = "espidf"), esp_idf_mbedtls_psk_modes))]
+#[derive(Debug, Clone, Copy)]
+pub struct PskCallback {
+    /// The callback passed to `mbedtls_ssl_conf_psk_cb`.
+    pub f: unsafe extern "C" fn(
+        p_ctx: *mut c_void,
+        ssl: *mut mbedtls_ssl_context,
+        identity: *const c_uchar,
+        identity_len: usize,
+    ) -> c_int,
+    /// Opaque context pointer handed back to `f` on every call.
+    pub p_ctx: *mut c_void,
+}
+
+// The raw pointers are opaque to defmt; format only the type name.
+#[cfg(all(
+    feature = "defmt",
+    any(not(target_os = "espidf"), esp_idf_mbedtls_psk_modes)
+))]
+impl defmt::Format for PskCallback {
+    fn format(&self, f: defmt::Formatter) {
+        defmt::write!(f, "PskCallback");
+    }
+}
+
 /// Configuration for a TLS session
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -224,8 +352,11 @@ pub struct ClientSessionConfig<'a> {
     /// The CA chain should contain the trusted CA certificates
     /// that will be used to verify the server's certificate by the client during the handshake.
     pub ca_chain: Option<Certificate<'a>>,
-    /// Optional client credentials used for authenticating the client to the server
-    pub creds: Option<Credentials<'a>>,
+    /// How the client proves to the server who it is: `None` (the usual TLS
+    /// client), a certificate (mutual TLS) or an EC J-PAKE password. With
+    /// EC J-PAKE, the fields that verify the server's certificate do not
+    /// apply.
+    pub authentication: Option<Authentication<'a>>,
     /// The server name to verify in the certificate provided by the server
     /// Optional, because it can also be provided later
     pub server_name: Option<&'a CStr>,
@@ -271,7 +402,7 @@ impl<'a> ClientSessionConfig<'a> {
     pub const fn new() -> Self {
         Self {
             ca_chain: None,
-            creds: None,
+            authentication: None,
             server_name: None,
             auth_mode: AuthMode::Required,
             min_version: TlsVersion::Tls1_2,
@@ -324,8 +455,8 @@ pub struct ServerSessionConfig<'a> {
     /// The CA chain should contain the trusted CA certificates
     /// that will be used to verify the client's certificate by the server during the handshake.
     pub ca_chain: Option<Certificate<'a>>,
-    /// Server credentials used for authenticating the server to the client
-    pub creds: Credentials<'a>,
+    /// How the server proves to the client who it is.
+    pub authentication: Authentication<'a>,
     /// Client certificate verification mode. Can be overriden.
     /// By default, [AuthMode::None] will be used
     pub auth_mode: AuthMode,
@@ -344,10 +475,10 @@ pub struct ServerSessionConfig<'a> {
 }
 
 impl<'a> ServerSessionConfig<'a> {
-    pub const fn new(creds: Credentials<'a>) -> Self {
+    pub const fn new(authentication: Authentication<'a>) -> Self {
         Self {
             ca_chain: None,
-            creds,
+            authentication,
             auth_mode: AuthMode::None,
             min_version: TlsVersion::Tls1_2,
             alpn_protocols: None,
@@ -372,10 +503,21 @@ impl<'a> SessionConfig<'a> {
         }
     }
 
-    fn creds(&self) -> Option<&Credentials<'a>> {
+    fn authentication(&self) -> Option<&Authentication<'a>> {
         match self {
-            SessionConfig::Client(ClientSessionConfig { creds, .. }) => creds.as_ref(),
-            SessionConfig::Server(ServerSessionConfig { creds, .. }) => Some(creds),
+            SessionConfig::Client(ClientSessionConfig { authentication, .. }) => {
+                authentication.as_ref()
+            }
+            SessionConfig::Server(ServerSessionConfig { authentication, .. }) => {
+                Some(authentication)
+            }
+        }
+    }
+
+    fn creds(&self) -> Option<&Credentials<'a>> {
+        match self.authentication() {
+            Some(Authentication::Certificate(creds)) => Some(creds),
+            _ => None,
         }
     }
 
@@ -425,6 +567,17 @@ impl<'a> SessionConfig<'a> {
             | SessionConfig::Server(ServerSessionConfig {
                 verify_callback, ..
             }) => *verify_callback,
+        }
+    }
+
+    #[cfg(any(
+        all(not(target_os = "espidf"), feature = "kex-ecjpake"),
+        esp_idf_mbedtls_key_exchange_ecjpake
+    ))]
+    fn ecjpake_password(&self) -> Option<&'a [u8]> {
+        match self.authentication() {
+            Some(Authentication::EcJpake(password)) => Some(*password),
+            _ => None,
         }
     }
 
@@ -509,6 +662,72 @@ impl Drop for GroupArray {
     }
 }
 
+/// Owned, zero-terminated cipher suite list allocated through Mbed TLS.
+#[cfg(any(not(target_os = "espidf"), esp_idf_mbedtls_psk_modes))]
+struct CiphersuiteArray(NonNull<c_int>);
+
+#[cfg(any(not(target_os = "espidf"), esp_idf_mbedtls_psk_modes))]
+impl CiphersuiteArray {
+    /// The cipher suites of pre-shared keys, from those of the build: TLS
+    /// 1.3's (which negotiates its key exchange apart), then ECDHE-PSK, then
+    /// DHE-PSK, then plain PSK, each in Mbed TLS's order of preference.
+    /// RSA-PSK is left out: it needs a server certificate.
+    fn psk() -> Option<Self> {
+        let all = unsafe { mbedtls_ssl_list_ciphersuites() };
+        let mut len = 0;
+        while unsafe { *all.add(len) } != 0 {
+            len += 1;
+        }
+        let all = unsafe { core::slice::from_raw_parts(all, len) };
+
+        let count = len.checked_add(1)?;
+        let ptr =
+            NonNull::new(unsafe { mbedtls_calloc(count, size_of::<c_int>()) }.cast::<c_int>())?;
+        let output = unsafe { core::slice::from_raw_parts_mut(ptr.as_ptr(), len) };
+
+        let tls13 = mbedtls_ssl_protocol_version_MBEDTLS_SSL_VERSION_TLS1_3;
+        let groups: [&dyn Fn(&mbedtls_ssl_ciphersuite_t) -> bool; 4] = [
+            &|suite| suite.private_min_tls_version as mbedtls_ssl_protocol_version == tls13,
+            &|suite| {
+                suite.private_key_exchange as mbedtls_key_exchange_type_t
+                    == mbedtls_key_exchange_type_t_MBEDTLS_KEY_EXCHANGE_ECDHE_PSK
+            },
+            &|suite| {
+                suite.private_key_exchange as mbedtls_key_exchange_type_t
+                    == mbedtls_key_exchange_type_t_MBEDTLS_KEY_EXCHANGE_DHE_PSK
+            },
+            &|suite| {
+                suite.private_key_exchange as mbedtls_key_exchange_type_t
+                    == mbedtls_key_exchange_type_t_MBEDTLS_KEY_EXCHANGE_PSK
+            },
+        ];
+
+        let mut taken = 0;
+        for group in groups {
+            for &id in all {
+                let suite = unsafe { mbedtls_ssl_ciphersuite_from_id(id).as_ref() };
+                if suite.is_some_and(group) {
+                    output[taken] = id;
+                    taken += 1;
+                }
+            }
+        }
+
+        Some(Self(ptr))
+    }
+
+    fn as_ptr(&self) -> *const c_int {
+        self.0.as_ptr()
+    }
+}
+
+#[cfg(any(not(target_os = "espidf"), esp_idf_mbedtls_psk_modes))]
+impl Drop for CiphersuiteArray {
+    fn drop(&mut self) {
+        unsafe { mbedtls_free(self.0.as_ptr().cast::<c_void>()) }
+    }
+}
+
 /// Session state
 struct SessionState<'a> {
     /// The SSL context
@@ -542,6 +761,17 @@ struct SessionState<'a> {
     ///
     /// This must remain after `ssl_context` and `_ssl_config` so Rust drops those fields first.
     _group_ids: Option<GroupArray>,
+    /// The cipher suites of a PSK session, referenced by the SSL configuration.
+    ///
+    /// This must remain after `ssl_context` and `_ssl_config` so Rust drops those fields first.
+    #[cfg(any(not(target_os = "espidf"), esp_idf_mbedtls_psk_modes))]
+    _ciphersuites: Option<CiphersuiteArray>,
+    /// Set again after each reset of the SSL context, see [`SessionState::reset`].
+    #[cfg(any(
+        all(not(target_os = "espidf"), feature = "kex-ecjpake"),
+        esp_idf_mbedtls_key_exchange_ecjpake
+    ))]
+    ecjpake_password: Option<&'a [u8]>,
 }
 
 /// Placeholder CA chain for [`VerifyCallback`] sessions without `ca_chain`:
@@ -554,9 +784,26 @@ unsafe impl Sync for DummyCrt {}
 
 static DUMMY_CRT: DummyCrt = DummyCrt(unsafe { core::mem::zeroed() });
 
+/// The ciphersuites of an EC J-PAKE session, zero-terminated.
+#[cfg(any(
+    all(not(target_os = "espidf"), feature = "kex-ecjpake"),
+    esp_idf_mbedtls_key_exchange_ecjpake
+))]
+static ECJPAKE_CIPHERSUITES: [c_int; 2] = [MBEDTLS_TLS_ECJPAKE_WITH_AES_128_CCM_8 as c_int, 0];
+
 impl<'a> SessionState<'a> {
     /// Initialize the Session state using the given configuration
     fn new(conf: &SessionConfig<'a>) -> Result<Self, MbedtlsError> {
+        Self::with_transport(conf, MBEDTLS_SSL_TRANSPORT_STREAM, |_| ())
+    }
+
+    /// Initialize the Session state for `transport` (`MBEDTLS_SSL_TRANSPORT_*`).
+    /// `configure` completes the SSL configuration before the SSL context is set up.
+    fn with_transport(
+        conf: &SessionConfig<'a>,
+        transport: u32,
+        configure: impl FnOnce(&mut mbedtls_ssl_config),
+    ) -> Result<Self, MbedtlsError> {
         merr!(unsafe { psa_crypto_init() })?;
 
         let mut ssl_config = MBox::new().ok_or(MbedtlsError::new(MBEDTLS_ERR_SSL_ALLOC_FAILED))?;
@@ -565,7 +812,7 @@ impl<'a> SessionState<'a> {
             mbedtls_ssl_config_defaults(
                 &mut *ssl_config,
                 conf.raw_mode(),
-                MBEDTLS_SSL_TRANSPORT_STREAM as i32,
+                transport as i32,
                 MBEDTLS_SSL_PRESET_DEFAULT as i32,
             )
         })?;
@@ -577,6 +824,49 @@ impl<'a> SessionState<'a> {
         if let Some(max_version) = conf.max_version() {
             ssl_config.private_max_tls_version = max_version.mbed_tls_version();
         }
+
+        #[cfg(any(
+            all(not(target_os = "espidf"), feature = "kex-ecjpake"),
+            esp_idf_mbedtls_key_exchange_ecjpake
+        ))]
+        if conf.ecjpake_password().is_some() {
+            // EC J-PAKE is a TLS 1.2 key exchange.
+            ssl_config.private_max_tls_version = TlsVersion::Tls1_2.mbed_tls_version();
+
+            unsafe {
+                mbedtls_ssl_conf_ciphersuites(&mut *ssl_config, ECJPAKE_CIPHERSUITES.as_ptr());
+            }
+        }
+
+        #[cfg(any(not(target_os = "espidf"), esp_idf_mbedtls_psk_modes))]
+        let ciphersuites = match conf.authentication() {
+            Some(Authentication::Psk { identity, key }) => {
+                // Copied by Mbed TLS.
+                merr!(unsafe {
+                    mbedtls_ssl_conf_psk(
+                        &mut *ssl_config,
+                        key.as_ptr(),
+                        key.len(),
+                        identity.as_ptr(),
+                        identity.len(),
+                    )
+                })?;
+
+                Some(Self::conf_psk_only(&mut ssl_config)?)
+            }
+            Some(Authentication::PskLookup(callback)) => {
+                if !matches!(conf, SessionConfig::Server(_)) {
+                    return Err(MbedtlsError::new(MBEDTLS_ERR_SSL_BAD_INPUT_DATA));
+                }
+
+                unsafe {
+                    mbedtls_ssl_conf_psk_cb(&mut *ssl_config, Some(callback.f), callback.p_ctx);
+                }
+
+                Some(Self::conf_psk_only(&mut ssl_config)?)
+            }
+            _ => None,
+        };
 
         Tls::hook_debug_logs(&mut ssl_config);
 
@@ -664,6 +954,8 @@ impl<'a> SessionState<'a> {
             );
         }
 
+        configure(&mut ssl_config);
+
         let mut ssl_context = MBox::new().ok_or(MbedtlsError::new(MBEDTLS_ERR_SSL_ALLOC_FAILED))?;
 
         merr!(unsafe { mbedtls_ssl_setup(&mut *ssl_context, &*ssl_config) })?;
@@ -694,7 +986,60 @@ impl<'a> SessionState<'a> {
             _creds: conf.creds().cloned(),
             _alpn_ptrs: alpn,
             _group_ids: group_ids,
+            #[cfg(any(not(target_os = "espidf"), esp_idf_mbedtls_psk_modes))]
+            _ciphersuites: ciphersuites,
+            #[cfg(any(
+                all(not(target_os = "espidf"), feature = "kex-ecjpake"),
+                esp_idf_mbedtls_key_exchange_ecjpake
+            ))]
+            ecjpake_password: conf.ecjpake_password(),
         })
+    }
+
+    /// Have `ssl_config` offer only the cipher suites and the TLS 1.3 modes
+    /// of pre-shared keys. The configuration references the returned list.
+    #[cfg(any(not(target_os = "espidf"), esp_idf_mbedtls_psk_modes))]
+    fn conf_psk_only(
+        ssl_config: &mut mbedtls_ssl_config,
+    ) -> Result<CiphersuiteArray, MbedtlsError> {
+        let ciphersuites =
+            CiphersuiteArray::psk().ok_or(MbedtlsError::new(MBEDTLS_ERR_SSL_ALLOC_FAILED))?;
+
+        unsafe {
+            mbedtls_ssl_conf_ciphersuites(ssl_config, ciphersuites.as_ptr());
+        }
+
+        #[cfg(any(not(target_os = "espidf"), esp_idf_mbedtls_ssl_proto_tls1_3))]
+        unsafe {
+            mbedtls_ssl_conf_tls13_key_exchange_modes(
+                ssl_config,
+                MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_PSK_ALL as c_int,
+            );
+        }
+
+        Ok(ciphersuites)
+    }
+
+    /// Reset the SSL context for a new handshake.
+    fn reset(&mut self) -> Result<(), MbedtlsError> {
+        merr!(unsafe { mbedtls_ssl_session_reset(self.ssl_context.as_mut_ptr()) })?;
+
+        // The password goes with the handshake state, which the reset renews.
+        #[cfg(any(
+            all(not(target_os = "espidf"), feature = "kex-ecjpake"),
+            esp_idf_mbedtls_key_exchange_ecjpake
+        ))]
+        if let Some(password) = self.ecjpake_password {
+            merr!(unsafe {
+                mbedtls_ssl_set_hs_ecjpake_password(
+                    self.ssl_context.as_mut_ptr(),
+                    password.as_ptr(),
+                    password.len(),
+                )
+            })?;
+        }
+
+        Ok(())
     }
 }
 

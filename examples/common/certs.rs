@@ -26,10 +26,13 @@ pub fn client_conf<'a>(mtls: bool, server_name: Option<&'a CStr>) -> ClientSessi
     };
 
     if mtls {
-        conf.creds = Some(Credentials {
-            certificate: Certificate::new_no_copy(CLIENT_CERT).unwrap(),
-            private_key: mbedtls_rs::PrivateKey::new(X509::DER(CLIENT_KEY), None).unwrap(),
-        });
+        conf.authentication = Some(
+            Credentials {
+                certificate: Certificate::new_no_copy(CLIENT_CERT).unwrap(),
+                private_key: mbedtls_rs::PrivateKey::new(X509::DER(CLIENT_KEY), None).unwrap(),
+            }
+            .into(),
+        );
     }
 
     conf
@@ -40,10 +43,13 @@ pub fn server_conf(mtls: bool) -> ServerSessionConfig<'static> {
 
     let mut conf = ServerSessionConfig {
         ca_chain: Some(cert.clone()),
-        ..ServerSessionConfig::new(Credentials {
-            certificate: cert.clone(),
-            private_key: mbedtls_rs::PrivateKey::new(X509::DER(KEY), None).unwrap(),
-        })
+        ..ServerSessionConfig::new(
+            Credentials {
+                certificate: cert.clone(),
+                private_key: mbedtls_rs::PrivateKey::new(X509::DER(KEY), None).unwrap(),
+            }
+            .into(),
+        )
     };
 
     if mtls {

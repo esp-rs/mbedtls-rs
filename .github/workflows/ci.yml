@@ -84,6 +84,10 @@ jobs:
       - name: Test
         run: cargo test
 
+      # EC J-PAKE is not in the default features.
+      - name: Test - DTLS with EC J-PAKE
+        run: cargo test -p mbedtls-rs --features kex-ecjpake --test dtls
+
       - name: Check - defmt
         run: cargo check -p mbedtls-rs --features defmt
 
@@ -101,6 +105,34 @@ jobs:
 
       - name: Build - STD Examples
         run: cd examples/std; cargo build
+
+  build-windows:
+    name: Build for Windows (MSVC)
+    runs-on: windows-latest
+    permissions: read-all
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: mbedtls init
+        run: git submodule update --init --recursive
+
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          target: x86_64-pc-windows-msvc
+          toolchain: stable
+
+      # MbedTLS is compiled on the fly, with the runner's LLVM (`clang`, and
+      # `libclang` for the bindings), CMake and Ninja.
+      - name: Setup | Ninja
+        run: choco install ninja --no-progress -y
+
+      # The STD examples are not built: their reactor (`async-io-mini`) is
+      # Unix-only.
+      - name: Test
+        env:
+          LIBCLANG_PATH: C:\Program Files\LLVM\bin
+        run: cargo test
 
   build-mbedtls:
     name: Pre-build MbedTLS native libs

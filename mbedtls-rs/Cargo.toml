@@ -35,9 +35,11 @@ ecp-restartable = ["mbedtls-rs-sys/ecp-restartable"]
 # Curated bundles
 # `tls`/`openthread` compile in MBEDTLS_DEBUG_C, so they also enable local
 # `tls-debug` (which gates `Tls::set_debug`); `matter` must NOT (no DEBUG_C).
+# `tls` compiles in DTLS, so it also enables local `tls-proto-dtls` (which gates
+# the `dtls` module).
 openthread = ["mbedtls-rs-sys/openthread", "tls-debug"]
 matter = ["mbedtls-rs-sys/matter"]
-tls = ["mbedtls-rs-sys/tls", "tls-debug"]
+tls = ["mbedtls-rs-sys/tls", "tls-debug", "tls-proto-dtls"]
 
 # Individual algorithm leaves (one per independently-linkable MbedTLS unit)
 alg-sha256 = ["mbedtls-rs-sys/alg-sha256"]
@@ -161,8 +163,8 @@ esp32h2 = ["mbedtls-rs-sys/esp32h2"]
 esp32s2 = ["mbedtls-rs-sys/esp32s2"]
 esp32s3 = ["mbedtls-rs-sys/esp32s3"]
 
-# embassy-time hook impls
-embassy-time = ["mbedtls-rs-sys/embassy-time"]
+# embassy-time hook impls, and `dtls::EmbassyClock`
+embassy-time = ["mbedtls-rs-sys/embassy-time", "dep:embassy-time"]
 
 [dependencies]
 # Algorithm surface is selected by the consumer via this crate's bundle/leaf
@@ -187,6 +189,7 @@ embedded-io-async = { workspace = true }
 enumset = { workspace = true, default-features = false }
 rand_core = { workspace = true }
 critical-section = { workspace = true }
+embassy-time = { workspace = true, optional = true }
 
 [dev-dependencies]
 critical-section = { workspace = true, features = ["std"] }
