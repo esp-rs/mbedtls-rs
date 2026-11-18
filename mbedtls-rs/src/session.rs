@@ -685,30 +685,35 @@ impl CiphersuiteArray {
             NonNull::new(unsafe { mbedtls_calloc(count, size_of::<c_int>()) }.cast::<c_int>())?;
         let output = unsafe { core::slice::from_raw_parts_mut(ptr.as_ptr(), len) };
 
-        let tls13 = mbedtls_ssl_protocol_version_MBEDTLS_SSL_VERSION_TLS1_3;
-        let groups: [&dyn Fn(&mbedtls_ssl_ciphersuite_t) -> bool; 4] = [
-            &|suite| suite.private_min_tls_version as mbedtls_ssl_protocol_version == tls13,
-            &|suite| {
-                suite.private_key_exchange as mbedtls_key_exchange_type_t
-                    == mbedtls_key_exchange_type_t_MBEDTLS_KEY_EXCHANGE_ECDHE_PSK
-            },
-            &|suite| {
-                suite.private_key_exchange as mbedtls_key_exchange_type_t
-                    == mbedtls_key_exchange_type_t_MBEDTLS_KEY_EXCHANGE_DHE_PSK
-            },
-            &|suite| {
-                suite.private_key_exchange as mbedtls_key_exchange_type_t
-                    == mbedtls_key_exchange_type_t_MBEDTLS_KEY_EXCHANGE_PSK
-            },
-        ];
+        // A suite's place in the list, if it is one of pre-shared keys. One
+        // rank each, so that the groups cannot overlap.
+        let rank = |id: c_int| {
+            let suite = unsafe { mbedtls_ssl_ciphersuite_from_id(id).as_ref() }?;
+            let key_exchange = suite.private_key_exchange as mbedtls_key_exchange_type_t;
 
-        let mut taken = 0;
-        for group in groups {
+            if suite.private_min_tls_version as mbedtls_ssl_protocol_version
+                == mbedtls_ssl_protocol_version_MBEDTLS_SSL_VERSION_TLS1_3
+            {
+                Some(0)
+            } else if key_exchange == mbedtls_key_exchange_type_t_MBEDTLS_KEY_EXCHANGE_ECDHE_PSK {
+                Some(1)
+            } else if key_exchange == mbedtls_key_exchange_type_t_MBEDTLS_KEY_EXCHANGE_DHE_PSK {
+                Some(2)
+            } else if key_exchange == mbedtls_key_exchange_type_t_MBEDTLS_KEY_EXCHANGE_PSK {
+                Some(3)
+            } else {
+                None
+            }
+        };
+
+        // Each suite of `all` goes into one slot at most.
+        let mut slots = output.iter_mut();
+        for wanted in 0..4 {
             for &id in all {
-                let suite = unsafe { mbedtls_ssl_ciphersuite_from_id(id).as_ref() };
-                if suite.is_some_and(group) {
-                    output[taken] = id;
-                    taken += 1;
+                if rank(id) == Some(wanted) {
+                    if let Some(slot) = slots.next() {
+                        *slot = id;
+                    }
                 }
             }
         }

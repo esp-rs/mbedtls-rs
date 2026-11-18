@@ -88,6 +88,10 @@ unsafe extern "C" fn lookup(
     identity: *const c_uchar,
     identity_len: usize,
 ) -> c_int {
+    if identity.is_null() {
+        return -1;
+    }
+
     let identity = unsafe { core::slice::from_raw_parts(identity, identity_len) };
 
     match KEYS.iter().find(|(name, _)| *name == identity) {
