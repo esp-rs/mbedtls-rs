@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 * (Breaking) `ClientSessionConfig::creds` and `ServerSessionConfig::creds` are now `authentication`, an `Authentication`: a certificate (`Authentication::Certificate`, or `.into()` from `Credentials`) or, with the `kex-ecjpake` feature, an EC J-PAKE password (`Authentication::EcJpake`), as in Thread commissioning. `ServerSessionConfig::new` takes it
-* Add DTLS sessions (`dtls::Session`): TLS 1.2 over a datagram transport (`dtls::Datagram`), with a `dtls::Clock` for the handshake's retransmissions (`dtls::EmbassyClock` with the `embassy-time` feature). The `tls` bundle includes them
+* Add DTLS sessions (`dtls::Session`): TLS 1.2 over a datagram transport (`dtls::Datagram`), with a `dtls::Clock` for the handshake's retransmissions (`dtls::EmbassyClock` with the `embassy-time` feature). A server session checks its client's address with a cookie first (`dtls::Cookies`, `dtls::CookieCheck`), unless told not to. The `tls` bundle includes them
 * Add pre-shared keys: `Authentication::Psk`, and `Authentication::PskLookup` (`PskCallback`) for a server with a key for each client. ECDHE-PSK, which has forward secrecy, comes first
 * On ESP-IDF, DTLS, EC J-PAKE and pre-shared keys follow ESP-IDF's configuration (`CONFIG_MBEDTLS_SSL_PROTO_DTLS`, `CONFIG_MBEDTLS_KEY_EXCHANGE_ECJPAKE`, `CONFIG_MBEDTLS_PSK_MODES`), as its MbedTLS does
 * (Breaking) Add a `tls-sni` feature. The `tls` bundle (and so the default features) include it; a build that uses `--no-default-features` no longer sends the Server Name Indication extension unless it enables `tls-sni`. `ClientSessionConfig::server_name` still sets the name the certificate is verified against

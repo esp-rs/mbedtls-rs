@@ -19,9 +19,9 @@ use std::task::Wake;
 use std::thread::{self, Thread};
 use std::time::{Duration, Instant};
 
-use mbedtls_rs::dtls::{Clock, Datagram, DtlsConfig, Session};
+use mbedtls_rs::dtls::{Clock, CookieCheck, Cookies, Datagram, DtlsConfig, Session};
 use mbedtls_rs::io::ErrorType;
-use mbedtls_rs::sys::MBEDTLS_ERR_SSL_FEATURE_UNAVAILABLE;
+use mbedtls_rs::sys::{MBEDTLS_ERR_SSL_BAD_INPUT_DATA, MBEDTLS_ERR_SSL_FEATURE_UNAVAILABLE};
 use mbedtls_rs::{
     Authentication, Certificate, ClientSessionConfig, Credentials, PrivateKey, ServerSessionConfig,
     SessionConfig, SessionError, Tls, TlsVersion, X509,
@@ -30,6 +30,14 @@ use rand::{Rng, TryCryptoRng, TryRng};
 
 const CERTIFICATE: &[u8] = include_bytes!("fixtures/cert.der");
 const PRIVATE_KEY: &[u8] = include_bytes!("fixtures/key.der");
+
+/// The handshake message types of `HelloVerifyRequest` and `ServerHello`.
+const HELLO_VERIFY_REQUEST: u8 = 3;
+const SERVER_HELLO: u8 = 2;
+
+/// The offset of the handshake message type in a datagram, after the
+/// record's header.
+const MESSAGE_TYPE: usize = 13;
 
 /// How long a test may wait without a wake-up.
 const STALL: Duration = Duration::from_secs(10);
@@ -70,6 +78,8 @@ struct Direction {
     /// sequence numbers.
     last: Option<Vec<u8>>,
     duplicates: usize,
+    /// The handshake message type of the first datagram sent.
+    first: Option<u8>,
 }
 
 /// What goes wrong on the way out of an endpoint.
@@ -143,6 +153,10 @@ impl Datagram for Endpoint {
         }
 
         let mut outgoing = self.outgoing.borrow_mut();
+
+        if outgoing.first.is_none() {
+            outgoing.first = data.get(MESSAGE_TYPE).copied();
+        }
 
         if outgoing.last.as_deref() == Some(data) {
             outgoing.duplicates += 1;
@@ -273,11 +287,12 @@ async fn join<A: Future, B: Future>(a: A, b: B) -> (A::Output, B::Output) {
     .await
 }
 
-fn dtls_config() -> DtlsConfig {
+fn dtls_config() -> DtlsConfig<'static> {
     DtlsConfig {
         handshake_timeout_min: 100,
         handshake_timeout_max: 400,
         mtu: Some(1232),
+        ..DtlsConfig::new()
     }
 }
 
@@ -306,10 +321,34 @@ fn ping_pong(
     server_config: &SessionConfig<'_>,
     client_faults: Faults,
 ) -> Result<Vec<u8>, SessionError> {
+    ping_pong_with(client_config, server_config, client_faults, true)
+}
+
+/// [`ping_pong`], with the server checking the client's address with a
+/// cookie, or not.
+fn ping_pong_with(
+    client_config: &SessionConfig<'_>,
+    server_config: &SessionConfig<'_>,
+    client_faults: Faults,
+    cookies: bool,
+) -> Result<Vec<u8>, SessionError> {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
 
     let mut rng = StdRng;
     let tls = unsafe { Tls::new_local_borrows(&mut rng) }.unwrap();
+
+    let secret = Cookies::new(tls.reference()).unwrap();
+    let server_dtls = DtlsConfig {
+        cookie_check: Some(if cookies {
+            CookieCheck::Verify {
+                cookies: &secret,
+                client: b"client",
+            }
+        } else {
+            CookieCheck::Off
+        }),
+        ..dtls_config()
+    };
 
     let (client_io, server_io) = link(client_faults);
     let start = Instant::now();
@@ -326,7 +365,7 @@ fn ping_pong(
         server_io,
         StdClock(start),
         server_config,
-        &dtls_config(),
+        &server_dtls,
     )?;
 
     let client_side = async {
@@ -356,6 +395,15 @@ fn ping_pong(
         assert_eq!(end.outgoing.borrow().duplicates, 0, "a datagram sent twice");
     }
 
+    if answer.is_ok() {
+        let first = if cookies {
+            HELLO_VERIFY_REQUEST
+        } else {
+            SERVER_HELLO
+        };
+        assert_eq!(server.io().outgoing.borrow().first, Some(first));
+    }
+
     served?;
     answer
 }
@@ -379,6 +427,39 @@ fn waits_for_the_transport_to_send() {
     };
 
     assert_eq!(ping_pong(&client, &server, faults).unwrap(), b"pong");
+}
+
+#[test]
+fn without_cookies() {
+    let (client, server) = certificate_configs();
+
+    assert_eq!(
+        ping_pong_with(&client, &server, Faults::default(), false).unwrap(),
+        b"pong"
+    );
+}
+
+#[test]
+fn a_server_needs_a_cookie_check() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+
+    let mut rng = StdRng;
+    let tls = unsafe { Tls::new_local_borrows(&mut rng) }.unwrap();
+    let (_, server_io) = link(Faults::default());
+    let (_, server) = certificate_configs();
+
+    let session = Session::new(
+        tls.reference(),
+        server_io,
+        StdClock(Instant::now()),
+        &server,
+        &dtls_config(),
+    );
+
+    assert!(matches!(
+        session,
+        Err(SessionError::MbedTls(e)) if e.code() == MBEDTLS_ERR_SSL_BAD_INPUT_DATA
+    ));
 }
 
 #[test]

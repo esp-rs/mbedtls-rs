@@ -11,9 +11,10 @@
 //! `MBEDTLS_ERR_SSL_FEATURE_UNAVAILABLE` if the [`SessionConfig`] allows
 //! TLS 1.3 (`min_version` or `max_version`).
 //!
-//! A server session does not use the cookie exchange of DTLS
-//! (`HelloVerifyRequest`): it answers the first `ClientHello` that its
-//! transport receives.
+//! A server session first checks, with a cookie (`HelloVerifyRequest`), that
+//! its client receives at the address it sends from. Thus, a `ClientHello`
+//! from a forged address does not get the server's flights, which are much
+//! larger. See [`CookieCheck`].
 
 use core::ffi::{c_int, c_uchar, c_void};
 use core::future::{pending, poll_fn, Future};
@@ -24,7 +25,7 @@ use core::task::{Context, Poll};
 use embedded_io::{Error, ErrorKind, ErrorType};
 
 use crate::sys::*;
-use crate::{MBox, MInit, SessionError, TlsReference};
+use crate::{mbedtls_rng, MBox, MInit, SessionError, TlsReference};
 
 use super::{SessionConfig, SessionState};
 
@@ -108,10 +109,81 @@ impl Clock for EmbassyClock {
     }
 }
 
+/// The secret of a DTLS server's cookies, shared by its sessions; see
+/// [`CookieCheck`].
+pub struct Cookies {
+    /// MbedTLS updates it from within the sessions' calls.
+    ctx: MBox<mbedtls_ssl_cookie_ctx>,
+}
+
+impl Cookies {
+    /// A new secret, from the RNG of the active `Tls` instance.
+    pub fn new(_tls: TlsReference<'_>) -> Result<Self, SessionError> {
+        merr!(unsafe { psa_crypto_init() })?;
+
+        let mut ctx = MBox::<mbedtls_ssl_cookie_ctx>::new().ok_or(SessionError::MbedTls(
+            MbedtlsError::new(MBEDTLS_ERR_SSL_ALLOC_FAILED),
+        ))?;
+
+        merr!(unsafe {
+            mbedtls_ssl_cookie_setup(ctx.as_mut_ptr(), Some(mbedtls_rng), null_mut())
+        })?;
+
+        Ok(Self { ctx })
+    }
+}
+
+impl core::fmt::Debug for Cookies {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("Cookies")
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl defmt::Format for Cookies {
+    fn format(&self, f: defmt::Formatter<'_>) {
+        defmt::write!(f, "Cookies");
+    }
+}
+
+impl MInit for mbedtls_ssl_cookie_ctx {
+    fn init(&mut self) {
+        unsafe {
+            mbedtls_ssl_cookie_init(self);
+        }
+    }
+
+    fn deinit(&mut self) {
+        unsafe {
+            mbedtls_ssl_cookie_free(self);
+        }
+    }
+}
+
+/// Whether a DTLS server session checks that its client receives at the
+/// address it sends from, before it answers its `ClientHello`.
+#[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum CookieCheck<'a> {
+    /// The session answers the first `ClientHello` with a cookie
+    /// (`HelloVerifyRequest`), made from `client` with the secret of
+    /// `cookies`, and goes on with the `ClientHello` that sends it back.
+    Verify {
+        /// The server's cookie secret.
+        cookies: &'a Cookies,
+        /// The client's address, as the transport sees it (e.g. the bytes of
+        /// its IP address and port).
+        client: &'a [u8],
+    },
+    /// No check: the session answers the first `ClientHello` at once. Only
+    /// where the client's address cannot be forged.
+    Off,
+}
+
 /// The settings of a DTLS session, besides its [`SessionConfig`].
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct DtlsConfig {
+pub struct DtlsConfig<'a> {
     /// How long the handshake waits for the answer to a flight before it
     /// sends the flight again, in milliseconds. The wait doubles with each
     /// retransmission.
@@ -122,20 +194,26 @@ pub struct DtlsConfig {
     /// The size of the largest datagram to send. `None`: as large as the
     /// records.
     pub mtu: Option<u16>,
+    /// Server only: whether the session checks its client's address first.
+    /// A server session needs it: with `None`, [`Session::new`] fails with
+    /// `MBEDTLS_ERR_SSL_BAD_INPUT_DATA`, so that the check is left out only on
+    /// purpose ([`CookieCheck::Off`]).
+    pub cookie_check: Option<CookieCheck<'a>>,
 }
 
-impl DtlsConfig {
-    /// MbedTLS's defaults: from 1 to 60 seconds, no MTU.
+impl DtlsConfig<'_> {
+    /// MbedTLS's defaults: from 1 to 60 seconds, no MTU; no cookie check.
     pub const fn new() -> Self {
         Self {
             handshake_timeout_min: MBEDTLS_SSL_DTLS_TIMEOUT_DFL_MIN,
             handshake_timeout_max: MBEDTLS_SSL_DTLS_TIMEOUT_DFL_MAX,
             mtu: None,
+            cookie_check: None,
         }
     }
 }
 
-impl Default for DtlsConfig {
+impl Default for DtlsConfig<'_> {
     fn default() -> Self {
         Self::new()
     }
@@ -158,6 +236,8 @@ where
     /// The datagram that the session sent while MbedTLS waited, see
     /// [`Wait::Send`]
     sent: Option<(*const u8, usize)>,
+    /// The client's address, for a server that checks it with a cookie
+    cookie_client: Option<&'a [u8]>,
     /// Whether the handshake is done
     connected: bool,
     /// Reference to the active Tls instance
@@ -182,9 +262,20 @@ where
         io: T,
         clock: C,
         config: &SessionConfig<'a>,
-        dtls: &DtlsConfig,
+        dtls: &DtlsConfig<'a>,
     ) -> Result<Self, SessionError> {
         let server = matches!(config, SessionConfig::Server(_));
+
+        let cookie_check = if server {
+            Some(
+                dtls.cookie_check
+                    .ok_or(SessionError::MbedTls(MbedtlsError::new(
+                        MBEDTLS_ERR_SSL_BAD_INPUT_DATA,
+                    )))?,
+            )
+        } else {
+            None
+        };
 
         let mut state =
             SessionState::with_transport(config, MBEDTLS_SSL_TRANSPORT_DATAGRAM, |ssl_config| {
@@ -196,11 +287,19 @@ where
                     );
                 }
 
-                if server {
-                    // No cookie exchange, see the module documentation.
-                    unsafe {
+                match cookie_check {
+                    Some(CookieCheck::Verify { cookies, .. }) => unsafe {
+                        mbedtls_ssl_conf_dtls_cookies(
+                            ssl_config,
+                            Some(mbedtls_ssl_cookie_write),
+                            Some(mbedtls_ssl_cookie_check),
+                            cookies.ctx.as_shared_ptr() as *mut c_void,
+                        );
+                    },
+                    Some(CookieCheck::Off) => unsafe {
                         mbedtls_ssl_conf_dtls_cookies(ssl_config, None, None, null_mut());
-                    }
+                    },
+                    None => (),
                 }
             })?;
 
@@ -232,6 +331,10 @@ where
             state,
             timer,
             sent: None,
+            cookie_client: match cookie_check {
+                Some(CookieCheck::Verify { client, .. }) => Some(client),
+                _ => None,
+            },
             connected: false,
             _token: tls,
         })
@@ -259,12 +362,33 @@ where
             return Ok(());
         }
 
-        self.state.reset()?;
+        loop {
+            self.state.reset()?;
 
-        merr!(
-            self.drive(|ssl| unsafe { mbedtls_ssl_handshake(ssl) })
+            // A reset forgets it.
+            if let Some(client) = self.cookie_client {
+                merr!(unsafe {
+                    mbedtls_ssl_set_client_transport_id(
+                        self.state.ssl_context.as_mut_ptr(),
+                        client.as_ptr(),
+                        client.len(),
+                    )
+                })?;
+            }
+
+            match self
+                .drive(|ssl| unsafe { mbedtls_ssl_handshake(ssl) })
                 .await?
-        )?;
+            {
+                // The client got a cookie: it sends its `ClientHello` again,
+                // with the cookie.
+                MBEDTLS_ERR_SSL_HELLO_VERIFY_REQUIRED => continue,
+                ret => {
+                    merr!(ret)?;
+                    break;
+                }
+            }
+        }
 
         self.connected = true;
 

@@ -11,7 +11,7 @@ A session proves to its peer who it is with an `Authentication`: a certificate a
 
 ## DTLS
 
-The `dtls` module has DTLS 1.2 sessions over datagram transports. A session times the retransmissions of its handshake with a `dtls::Clock`; `dtls::EmbassyClock` is one, with the `embassy-time` feature. With the `kex-ecjpake` feature, a session can use an EC J-PAKE handshake instead of certificates (`Authentication::EcJpake`), as Thread commissioning does.
+The `dtls` module has DTLS 1.2 sessions over datagram transports. A session times the retransmissions of its handshake with a `dtls::Clock`; `dtls::EmbassyClock` is one, with the `embassy-time` feature. A server session first checks, with a cookie, that its client receives at the address it sends from (`dtls::CookieCheck`), so that a forged address does not get the server's flights. With the `kex-ecjpake` feature, a session can use an EC J-PAKE handshake instead of certificates (`Authentication::EcJpake`), as Thread commissioning does.
 
 ## Certificate validity dates
 
