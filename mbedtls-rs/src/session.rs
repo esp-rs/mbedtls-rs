@@ -1,4 +1,4 @@
-use core::ffi::{c_char, c_int, c_uchar, c_void, CStr};
+use core::ffi::{c_char, c_int, c_void, CStr};
 use core::marker::PhantomData;
 use core::ptr::NonNull;
 
@@ -324,7 +324,7 @@ pub struct PskCallback {
     pub f: unsafe extern "C" fn(
         p_ctx: *mut c_void,
         ssl: *mut mbedtls_ssl_context,
-        identity: *const c_uchar,
+        identity: *const core::ffi::c_uchar,
         identity_len: usize,
     ) -> c_int,
     /// Opaque context pointer handed back to `f` on every call.
