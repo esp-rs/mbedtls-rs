@@ -24,6 +24,8 @@ For user-convenience, the MbedTLS C library also comes pre-built for the followi
 - `xtensa-esp32s3-none-elf`
 - (PRs for other Rust baremetal targets appreciated!)
 
+The prebuilt libraries are built with the default `tls` profile and with all the algorithm hooks (see "Hooking" below). They are used when the selected algorithms are exactly those of `tls`, whichever of the algorithm hooks are enabled. Any other selection of algorithms, or the timer and wall-clock hooks, means that the MbedTLS C library is compiled on the fly.
+
 For other MCU baremetal targets as well as for STD platforms, the MbedTLS C library will be compiled on the fly with `clang` (by default), or with GCC (if the `use-gcc` feature is enabled). 
 
 Note that for the latter, you DO need to have the GCC cross-compiler flavor for your MCU pre-installed and on your $PATH, while with `clang` _ANY_ `clang` instance would do, as `clang` is natively a cross-compiler. `clang` is anyway always necessary during on-the-fly compilation for the Rust bindings' generation, so that's why it is used by default for compiling the MbedTLS C library as well.
@@ -58,10 +60,16 @@ Say, you want the SHA-1 algorithm beging accelerated. You then need to:
 
 Needless to say, this is a lot of lift-and-shift for Rust developers, especially if they plan to plug-in **Rust-based** hardware accelerated routines.
 For that reason, `mbedtls-rs-sys` provides the so called Hooking mechanism, currently for:
-- The SHA-1, SHA-224/256 and SHA-384/512 digests (`hook_sha1`, `hook_sha224`, `hook_sha256`, `hook_sha384`, `hook_sha512`)
-- The AES block cipher, including all its cipher modes and everything MbedTLS builds on top of it - CCM, GCM, CMAC and CTR-DRBG (`hook_aes`)
-- The ECP scalar multiplication (`R = m * P`) and public-key (point-on-curve) check, through which all ECDH / ECDSA / ECJPAKE (and generic SPAKE2+-style protocol) math funnels (`hook_ecp_mul`, `hook_ecp_verify`)
-- The MPI (bignum) modular exponentiation used by RSA and DHM (`hook_exp_mod`)
+- The SHA-1, SHA-224/256 and SHA-384/512 digests (`hook_sha1`, `hook_sha224`, `hook_sha256`, `hook_sha384`, `hook_sha512`; features `hook-sha1`, `hook-sha256` and `hook-sha512`)
+- The AES block cipher, including all its cipher modes and everything MbedTLS builds on top of it - CCM, GCM, CMAC and CTR-DRBG (`hook_aes`; feature `hook-aes`)
+- The ECP scalar multiplication (`R = m * P`) and public-key (point-on-curve) check, through which all ECDH / ECDSA / ECJPAKE (and generic SPAKE2+-style protocol) math funnels (`hook_ecp_mul`, `hook_ecp_verify`; features `hook-ecp-mul` and `hook-ecp-verify`)
+- The MPI (bignum) modular exponentiation used by RSA and DHM (`hook_exp_mod`; feature `hook-exp-mod`)
+
+Each hook is behind its own `hook-*` feature, and none is enabled by default. Without the feature, MbedTLS is compiled with its own implementation only and the `hook_*` function does not exist. A hook also needs its algorithm to be compiled in (e.g. `hook-aes` does nothing without `alg-aes`).
+
+The exception are the prebuilt libraries. They are built with all the algorithm hooks, so a build that uses them has all of these hooks installed and all the `hook_*` functions available, whether or not the `hook-*` features are enabled. A hook that is not registered falls back to the software implementation.
+
+The features are meant to be enabled by the crates that implement the hooks, rather than by the user. For example, [`mbedtls-rs-sys-esp`](../mbedtls-rs-sys-esp) implements them with the hardware accelerators of the ESP32 chips and enables the hooks of the accelerators the selected chip has. Such crates learn which hooks are installed from the `hooks` metadata key of this crate (`DEP_MBEDTLS_HOOKS` in their build script): a comma-separated list such as `sha1,sha256,aes`. This crate gates its own hook code on the same list, as `mbedtls_hook = "<name>"` cfgs.
 
 Besides the hardware-acceleration hooks above, two further hooks supply platform facilities that MbedTLS cannot obtain by itself on a baremetal target:
 - A monotonic timer, for DTLS retransmission timeouts (`hook_timer`, behind the `hook-timer` feature)
@@ -77,7 +85,7 @@ In essence Hooking relies on the "_ALT" functionality in MbedTLS and specificall
 - There is a dyn-compatible trait for each hook (algorithm to be HW accelerated) provided by `mbedtls-rs-sys` that the Rust developer needs to implement. For e.g. SHA-1, the trait is called `MbedtlsSha1`. User is expected to call e.g. `hook_sha1(&'static dyn MbedtlsSha1)` with their own implementation early in their program initialization code
   - If `hook_XXX` is not called for a particular hook algorithm, MbedTLS would function just fine and would fallback to its own software implementation of the algorithm
     - For hooks that replace a whole module (`MBEDTLS_SHA1_ALT`, `MBEDTLS_SHA256_ALT`, `MBEDTLS_SHA512_ALT`, `MBEDTLS_AES_ALT`) the "_ALT" macro functionality normally **completely erases** the original C software impl from the build. `mbedtls-rs-sys` keeps it by compiling those modules' source files with the "_ALT" switch off and every public symbol (context types included) renamed via `-D` macros to `mbedtls_*_soft_*`
-    - Hardware implementations can reuse the software fallback as an escape hatch (e.g. `SoftAesState`, used by the ESP backend for key sizes the AES peripheral does not support)
+    - Hardware implementations can reuse the software fallback as an escape hatch (e.g. `SoftAesState`, used by `mbedtls-rs-sys-esp` for key sizes the AES peripheral does not support)
 
 Finally, when hooking stateless algorithms that do their job with a single function call (like `mbedtls_mpi_mod_exp`), there is no notion of a "work area" as the crypto algorithm does not really have an externally-observable state, in that it finishes all its operation in one go.
 

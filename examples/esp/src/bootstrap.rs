@@ -29,10 +29,10 @@ use esp_hal::timer::timg::TimerGroup;
 
 #[cfg(not(feature = "esp32c5"))]
 use mbedtls_rs::sys::hook::backend::embassy::timer::EmbassyTimer;
-#[cfg(not(feature = "esp32c5"))]
-use mbedtls_rs::sys::hook::backend::esp::wall_clock::EspRtcWallClock;
-use mbedtls_rs::sys::hook::backend::esp::EspAccel;
 use mbedtls_rs::Tls;
+#[cfg(not(feature = "esp32c5"))]
+use mbedtls_rs_sys_esp::wall_clock::EspRtcWallClock;
+use mbedtls_rs_sys_esp::EspAccel;
 
 use esp_metadata_generated::memory_range;
 

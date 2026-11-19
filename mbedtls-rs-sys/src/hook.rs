@@ -4,6 +4,10 @@
 //! This enables providing hardware-accelerated crypto or platform-specific time sources
 //! on platforms that support it.
 //!
+//! Each hook is behind its own `hook-*` feature, and none is enabled by default. A crypto
+//! hook only exists if its algorithm is compiled in as well. The prebuilt libraries are built
+//! with all the crypto hooks, so a build that uses them has all of them.
+//!
 //! Crypto algorithms that remain "un-hooked" by the user fall back to the software
 //! implementations of MbedTLS itself. For the whole-module `_ALT` hooks (the digests and
 //! AES), MbedTLS would normally compile its own implementation out; the crate keeps it by

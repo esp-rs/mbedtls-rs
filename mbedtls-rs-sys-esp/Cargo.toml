@@ -1,0 +1,78 @@
+[package]
+name = "mbedtls-rs-sys-esp"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+rust-version = "1.95"
+description = "Hardware acceleration of MbedTLS for the ESP32 chips, with esp-hal"
+repository = "https://github.com/esp-rs/mbedtls-rs"
+readme = "README.md"
+keywords = ["mbedtls", "esp32", "embedded", "no-std", "crypto"]
+categories = ["cryptography", "embedded", "no-std", "hardware-support"]
+
+# Host-only routing test (F-01). Gated on the internal `_route-test` feature so
+# the default `cargo test` (no `crypto-bigint`) skips this target entirely.
+[[test]]
+name = "exp_mod_route"
+required-features = ["_route-test"]
+
+[features]
+# The chip. Each one enables the MbedTLS hooks of the accelerators the chip has.
+#
+# The wall-clock hook (`EspRtcWallClock`) is not enabled here, as it turns on the
+# X.509 date checks. Enable `mbedtls-rs-sys/hook-wall-clock` (or the
+# `mbedtls-rs/hook-wall-clock` feature) to get it.
+esp32 = [
+    "esp-hal/esp32", "crypto-bigint", "time",
+    "mbedtls-rs-sys/hook-exp-mod", "mbedtls-rs-sys/hook-aes",
+]
+esp32c2 = [
+    "esp-hal/esp32c2", "time",
+    "mbedtls-rs-sys/hook-sha1", "mbedtls-rs-sys/hook-sha256",
+    "mbedtls-rs-sys/hook-ecp-mul", "mbedtls-rs-sys/hook-ecp-verify",
+]
+esp32c3 = [
+    "esp-hal/esp32c3", "crypto-bigint", "time",
+    "mbedtls-rs-sys/hook-sha1", "mbedtls-rs-sys/hook-sha256",
+    "mbedtls-rs-sys/hook-exp-mod", "mbedtls-rs-sys/hook-aes",
+]
+esp32c5 = [
+    "esp-hal/esp32c5", "crypto-bigint", "time",
+    "mbedtls-rs-sys/hook-sha1", "mbedtls-rs-sys/hook-sha256",
+    "mbedtls-rs-sys/hook-exp-mod", "mbedtls-rs-sys/hook-aes",
+    "mbedtls-rs-sys/hook-ecp-mul", "mbedtls-rs-sys/hook-ecp-verify",
+]
+esp32c6 = [
+    "esp-hal/esp32c6", "crypto-bigint", "time",
+    "mbedtls-rs-sys/hook-sha1", "mbedtls-rs-sys/hook-sha256",
+    "mbedtls-rs-sys/hook-exp-mod", "mbedtls-rs-sys/hook-aes",
+    "mbedtls-rs-sys/hook-ecp-mul", "mbedtls-rs-sys/hook-ecp-verify",
+]
+esp32h2 = [
+    "esp-hal/esp32h2", "crypto-bigint", "time",
+    "mbedtls-rs-sys/hook-sha1", "mbedtls-rs-sys/hook-sha256",
+    "mbedtls-rs-sys/hook-exp-mod", "mbedtls-rs-sys/hook-aes",
+    "mbedtls-rs-sys/hook-ecp-mul", "mbedtls-rs-sys/hook-ecp-verify",
+]
+esp32s2 = [
+    "esp-hal/esp32s2", "crypto-bigint", "time",
+    "mbedtls-rs-sys/hook-sha1", "mbedtls-rs-sys/hook-sha256", "mbedtls-rs-sys/hook-sha512",
+    "mbedtls-rs-sys/hook-exp-mod", "mbedtls-rs-sys/hook-aes",
+]
+esp32s3 = [
+    "esp-hal/esp32s3", "crypto-bigint", "time",
+    "mbedtls-rs-sys/hook-sha1", "mbedtls-rs-sys/hook-sha256", "mbedtls-rs-sys/hook-sha512",
+    "mbedtls-rs-sys/hook-exp-mod", "mbedtls-rs-sys/hook-aes",
+]
+
+# Internal: host-only testing of the exp_mod routing logic. Pulls in
+# `crypto-bigint` (for the operand-size limb constants) WITHOUT `esp-hal`, so
+# `exp_mod_route` and its integration test compile on the host (everything
+# else is compiled out). Not for downstream use.
+_route-test = ["crypto-bigint"]
+
+[dependencies]
+mbedtls-rs-sys = { workspace = true, optional = true }
+esp-hal = { workspace = true, features = ["unstable"], optional = true }
+crypto-bigint = { workspace = true, default-features = false, features = ["extra-sizes"], optional = true }
+time = { workspace = true, default-features = false, optional = true }

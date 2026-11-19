@@ -9,6 +9,7 @@ on:
         description: Crate to publish
         options:
         - mbedtls-rs-sys
+        - mbedtls-rs-sys-esp
         - mbedtls-rs
 
 env:

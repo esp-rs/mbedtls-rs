@@ -12,13 +12,14 @@ use crypto_bigint::{U1024, U2048, U512};
 use crypto_bigint::{U256, U384};
 use esp_hal::rsa::{operand_sizes, RsaContext};
 
-use super::exp_mod_route::{HwKind, Route};
-use crate::hook::exp_mod::MbedtlsMpiExpMod;
-use crate::{
+use mbedtls_rs_sys::hook::exp_mod::MbedtlsMpiExpMod;
+use mbedtls_rs_sys::{
     mbedtls_mpi, mbedtls_mpi_cmp_int, mbedtls_mpi_exp_mod_soft, mbedtls_mpi_free, mbedtls_mpi_grow,
     mbedtls_mpi_init, mbedtls_mpi_lset, mbedtls_mpi_mod_mpi, mbedtls_mpi_set_bit, merr,
     MbedtlsError, MBEDTLS_ERR_MPI_BAD_INPUT_DATA,
 };
+
+use crate::exp_mod_route::{HwKind, Route};
 
 macro_rules! modular_exponentiate {
     ($op:ty, $x:expr, $y:expr, $m:expr, $rinv:expr, $z:expr, $x_words:expr, $y_words:expr, $m_words:expr, $op_size:expr) => {{

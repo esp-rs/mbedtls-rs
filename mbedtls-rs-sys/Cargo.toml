@@ -23,12 +23,6 @@ test = false
 # failures).
 doctest = false
 
-# Host-only routing test (F-01). Gated on the internal `_route-test` feature so
-# the default `cargo test` (no `crypto-bigint`) skips this target entirely.
-[[test]]
-name = "exp_mod_route"
-required-features = ["_route-test"]
-
 [features]
 # The default profile is the full config (`tls`), so behavior is unchanged for
 # existing consumers and the pre-generated bindings/libs apply as-is. Select a
@@ -37,12 +31,17 @@ required-features = ["_route-test"]
 # rebuild). See `gen/features.rs`.
 default = ["tls"]
 
-# The exact algorithm profile the committed per-target prebuilt libraries and
-# bindings are built with (see `xtask`, which builds them with this feature).
-# `gen/features.rs::PREBUILT_FEATURES` must list the same leaves. Keep it equal
-# to `tls`: the prebuilt artifacts are only reused when the active features +
-# hooks match this profile exactly.
-prebuilt = ["tls"]
+# The exact algorithm profile and hooks the committed per-target prebuilt
+# libraries and bindings are built with (see `xtask`, which builds them with this
+# feature). `gen/features.rs::PREBUILT_FEATURES` must list the same leaves, and
+# `gen/builder.rs::PREBUILT_HOOKS` the same hooks. Keep the profile equal to
+# `tls`: the prebuilt artifacts are only reused when the active features match
+# this profile exactly and the active hooks are a subset of these.
+prebuilt = [
+    "tls",
+    "hook-sha1", "hook-sha256", "hook-sha512", "hook-exp-mod", "hook-aes",
+    "hook-ecp-mul", "hook-ecp-verify",
+]
 
 # ─── TLS record buffer sizing (per-connection RAM) ───
 # Cap MBEDTLS_SSL_IN/OUT_CONTENT_LEN below the 16384 default to shrink the
@@ -82,46 +81,23 @@ force-esp-riscv-gcc = ["use-gcc"]
 # `curve-*` feature alongside this one.
 ecp-restartable = ["alg-ecp"]
 
-# Disable all or some hooks; this would preclude hooking custom HW-accelerated algos
-nohook = [
-    "nohook-sha1",
-    "nohook-sha256",
-    "nohook-sha512",
-    "nohook-exp-mod",
-    "nohook-aes",
-    "nohook-ecp-mul",
-    "nohook-ecp-verify",
-]
-nohook-sha1 = []
-nohook-sha256 = []
-nohook-sha512 = []
-nohook-exp-mod = []
-nohook-aes = []
-nohook-ecp-mul = []
-nohook-ecp-verify = []
-# Enable timer/wall-clock hooks for custom time implementations
+# Hooks for custom (e.g. hardware-accelerated) implementations of some algorithms. None is
+# enabled by default. A hook compiles the MbedTLS module with its `_ALT` option, adds the Rust
+# `hook_*` function for it and keeps MbedTLS's own implementation as the fallback. A hook only
+# takes effect if its algorithm is compiled in as well (`alg-*`).
+hook-sha1 = []
+hook-sha256 = []       # SHA-256 and SHA-224
+hook-sha512 = []       # SHA-512 and SHA-384
+hook-exp-mod = []      # MPI modular exponentiation (RSA, DHM)
+hook-aes = []
+hook-ecp-mul = []      # ECP scalar multiplication
+hook-ecp-verify = []   # ECP public key check
+# Timer and wall-clock hooks for custom time implementations
 hook-timer = []
 hook-wall-clock = ["hook-timer"] # 'hook-wall-clock' feature requires 'hook-timer' to be enabled. MbedTLS X.509 certificate validation requires both time() and gmtime_r() functions.
 
 # STD hook impls
 std = ["time"]
-
-# esp-hal hook impls
-esp32 = ["esp-hal/esp32", "crypto-bigint", "time"]
-esp32c2 = ["esp-hal/esp32c2", "time"]
-esp32c3 = ["esp-hal/esp32c3", "crypto-bigint", "time"]
-esp32c5 = ["esp-hal/esp32c5", "crypto-bigint", "time"]
-esp32c6 = ["esp-hal/esp32c6", "crypto-bigint", "time"]
-esp32h2 = ["esp-hal/esp32h2", "crypto-bigint", "time"]
-esp32s2 = ["esp-hal/esp32s2", "crypto-bigint", "time"]
-esp32s3 = ["esp-hal/esp32s3", "crypto-bigint", "time"]
-
-# Internal: host-only testing of the ESP exp_mod routing logic. Pulls in
-# `crypto-bigint` (for the operand-size limb constants) WITHOUT `esp-hal`, so
-# `backend::esp::exp_mod_route` and its integration test compile on the host
-# (the `esp` module is mounted with everything else compiled out).
-# Not for downstream use.
-_route-test = ["crypto-bigint"]
 
 # ---------------------------------------------------------------------------
 # Features controlling what MbedTLS algorithms gets compiled in.
@@ -292,10 +268,6 @@ log = { workspace = true, default-features = false, optional = true }
 enumset = { workspace = true, default-features = false }
 time = { workspace = true, default-features = false, optional = true }
 critical-section = { workspace = true }
-
-# For esp-hal hook impls
-esp-hal = { workspace = true, features = ["unstable"], optional = true }
-crypto-bigint = { workspace = true, default-features = false, features = ["extra-sizes"], optional = true }
 
 # For embassy timer hook impl
 embassy-time = {workspace = true, optional = true }

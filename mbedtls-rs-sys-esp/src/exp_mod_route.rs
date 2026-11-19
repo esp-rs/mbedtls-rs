@@ -2,12 +2,11 @@
 //! operand size for a given limb count, or fall back to software.
 //!
 //! This is intentionally free of any `esp_hal` dependency so it can be unit
-//! tested on the host: under the internal `_route-test` feature the enclosing
-//! [`esp`](super) module is mounted even without `esp-hal`, with everything
-//! except this submodule compiled out (every other item there is gated on the
-//! `esp-hal` feature). The production ESP backend in [`super::exp_mod`] calls
-//! [`Route::route_for`] to decide whether a request can be served by the RSA
-//! peripheral or must use the MbedTLS software path.
+//! tested on the host: under the internal `_route-test` feature this module is
+//! mounted even without `esp-hal`, with everything else in the crate compiled
+//! out. The production backend in `exp_mod` calls [`Route::route_for`] to
+//! decide whether a request can be served by the RSA peripheral or must use
+//! the MbedTLS software path.
 
 use crypto_bigint::U1024;
 use crypto_bigint::U2048;

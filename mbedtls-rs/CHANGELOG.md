@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+* (Breaking) The `hook-sha1`, `hook-sha256`, `hook-sha512`, `hook-exp-mod`, `hook-aes`, `hook-ecp-mul` and `hook-ecp-verify` features replace the `nohook*` features, as in `mbedtls-rs-sys`
+* (Breaking) Remove the `esp32*` features. The ESP hardware acceleration is in the new `mbedtls-rs-sys-esp` crate
 * (Breaking) `ClientSessionConfig::creds` and `ServerSessionConfig::creds` are now `authentication`, an `Authentication`: a certificate (`Authentication::Certificate`, or `.into()` from `Credentials`) or, with the `kex-ecjpake` feature, an EC J-PAKE password (`Authentication::EcJpake`), as in Thread commissioning. `ServerSessionConfig::new` takes it
 * Add DTLS sessions (`dtls::Session`): TLS 1.2 over a datagram transport (`dtls::Datagram`), with a `dtls::Clock` for the handshake's retransmissions (`dtls::EmbassyClock` with the `embassy-time` feature). A server session checks its client's address with a cookie first (`dtls::Cookies`, `dtls::CookieCheck`), unless told not to. The `tls` bundle includes them
 * Add pre-shared keys: `Authentication::Psk`, and `Authentication::PskLookup` (`PskCallback`) for a server with a key for each client. ECDHE-PSK, which has forward secrecy, comes first

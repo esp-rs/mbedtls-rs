@@ -20,8 +20,8 @@ use esp_hal::ram;
 use esp_hal::timer::timg::TimerGroup;
 
 use esp_metadata_generated::memory_range;
-use mbedtls_rs::sys::hook::backend::esp::EspAccel;
 use mbedtls_rs::sys::self_test::MbedtlsSelfTest;
+use mbedtls_rs_sys_esp::EspAccel;
 
 use esp_radio as _;
 

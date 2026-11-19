@@ -114,9 +114,9 @@ where
 /// `starts` is a `fn(*mut ctx) -> c_int` (typically a closure) so that the
 /// SHA-224/384 variants can bind the variant flag of the shared `*_starts`.
 #[cfg(any(
-    all(feature = "alg-sha1", not(feature = "nohook-sha1")),
-    all(feature = "alg-sha256", not(feature = "nohook-sha256")),
-    all(feature = "alg-sha512", not(feature = "nohook-sha512")),
+    mbedtls_hook = "sha1",
+    mbedtls_hook = "sha256",
+    mbedtls_hook = "sha512",
 ))]
 macro_rules! soft_digest {
     (
@@ -204,9 +204,9 @@ macro_rules! soft_digest {
 }
 
 #[cfg(any(
-    all(feature = "alg-sha1", not(feature = "nohook-sha1")),
-    all(feature = "alg-sha256", not(feature = "nohook-sha256")),
-    all(feature = "alg-sha512", not(feature = "nohook-sha512")),
+    mbedtls_hook = "sha1",
+    mbedtls_hook = "sha256",
+    mbedtls_hook = "sha512",
 ))]
 pub(crate) use soft_digest;
 

@@ -14,7 +14,7 @@
 
 use crypto_bigint::{U1024, U2048, U256, U384, U4096, U512};
 
-use mbedtls_rs_sys::hook::backend::esp::exp_mod_route::{HwKind, Route};
+use mbedtls_rs_sys_esp::exp_mod_route::{HwKind, Route};
 
 #[test]
 fn supported_sizes_route_to_hardware() {

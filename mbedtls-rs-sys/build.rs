@@ -1,5 +1,7 @@
-use anyhow::Result;
 use std::{env, path::PathBuf};
+
+use anyhow::Result;
+use enumset::EnumSet;
 
 use crate::builder::{Hook, MbedtlsBuilder};
 
@@ -26,55 +28,60 @@ fn main() -> Result<()> {
     let pregen_libs_dir = crate_root_path.join("libs").join(&target);
 
     // Figure out what MbedTLS hook options to enable
-    let mut hooks = builder::DEFAULT_HOOKS;
-    for (feature, hook) in [
-        ("CARGO_FEATURE_NOHOOK_SHA1", Hook::Sha1),
-        ("CARGO_FEATURE_NOHOOK_SHA256", Hook::Sha256),
-        ("CARGO_FEATURE_NOHOOK_SHA512", Hook::Sha512),
-        ("CARGO_FEATURE_NOHOOK_EXP_MOD", Hook::ExpMod),
-        ("CARGO_FEATURE_NOHOOK_AES", Hook::Aes),
-        ("CARGO_FEATURE_NOHOOK_ECP_MUL", Hook::EcpMul),
-        ("CARGO_FEATURE_NOHOOK_ECP_VERIFY", Hook::EcpVerify),
-    ] {
-        if env::var(feature).is_ok() {
-            hooks.remove(hook);
-        }
-    }
+    let hooks = Hook::active();
 
-    for (feature, hook) in [
-        ("CARGO_FEATURE_HOOK_TIMER", Hook::Timer),
-        ("CARGO_FEATURE_HOOK_WALL_CLOCK", Hook::WallClock),
-    ] {
-        if env::var(feature).is_ok() {
-            hooks.insert(hook);
-        }
-    }
+    // The hook modules of this crate are gated on `mbedtls_hook = "<name>"`
+    // cfgs, set below for the hooks that end up installed
+    let hook_names = EnumSet::<Hook>::all()
+        .iter()
+        .map(|hook| format!("\"{}\"", hook.name()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    println!("cargo::rustc-check-cfg=cfg(mbedtls_hook, values({hook_names}))");
 
     // Desync guard: when the `prebuilt` profile itself is active (i.e. `xtask`
-    // generating the committed artifacts, with default hooks), the active
+    // generating the committed artifacts, with the prebuilt hooks), the active
     // config MUST equal the prebuilt reference. If it doesn't, the leaf list in
     // `Cargo.toml`'s `tls`/`prebuilt` bundle and `features::PREBUILT_FEATURES`
     // have drifted apart — fail loudly rather than silently shipping a `.a`
     // whose fingerprint no longer matches its own validity check.
-    if env::var_os("CARGO_FEATURE_PREBUILT").is_some() && hooks == builder::DEFAULT_HOOKS {
-        if let Err(delta) = builder::MbedtlsBuilder::prebuilt_validity(hooks) {
-            panic!(
-                "BUG: `prebuilt` profile active but the generated config does not match \
-                 `features::PREBUILT_FEATURES`. The `tls`/`prebuilt` bundle in Cargo.toml \
-                 and PREBUILT_FEATURES have drifted. Delta: {delta}"
-            );
+    if env::var_os("CARGO_FEATURE_PREBUILT").is_some() {
+        assert!(
+            builder::PREBUILT_HOOKS.is_subset(hooks),
+            "BUG: the `prebuilt` feature in Cargo.toml must enable the hooks of `PREBUILT_HOOKS`"
+        );
+
+        if hooks == builder::PREBUILT_HOOKS {
+            if let Err(delta) = builder::MbedtlsBuilder::prebuilt_validity(hooks) {
+                panic!(
+                    "BUG: `prebuilt` profile active but the generated config does not match \
+                     `features::PREBUILT_FEATURES`. The `tls`/`prebuilt` bundle in Cargo.toml \
+                     and PREBUILT_FEATURES have drifted. Delta: {delta}"
+                );
+            }
         }
     }
 
     // The committed prebuilt libraries and bindings are produced with the
-    // `prebuilt` profile (= `tls`) and `DEFAULT_HOOKS`. They are valid for this
+    // `prebuilt` profile (= `tls`) and `PREBUILT_HOOKS`. They are valid for this
     // build only if the *active* features + hooks generate a byte-for-byte
     // equivalent MbedTLS config. Any deviation — a narrower/wider algorithm
     // profile, an extra feature (e.g. `kex-ecjpake` on top of `tls`), or a hook
     // change — rejects them and forces an on-the-fly rebuild.
     let prebuilt_validity = builder::MbedtlsBuilder::prebuilt_validity(hooks);
 
-    let dirs = if pregen_bindings && pregen_bindings_rs_file.exists() && prebuilt_validity.is_ok() {
+    let use_prebuilt =
+        pregen_bindings && pregen_bindings_rs_file.exists() && prebuilt_validity.is_ok();
+
+    // The hooks installed in MbedTLS. The prebuilt artifacts have all of
+    // `PREBUILT_HOOKS`, of which the requested `hooks` are then a subset.
+    let installed_hooks = if use_prebuilt {
+        hooks | builder::PREBUILT_HOOKS
+    } else {
+        hooks
+    };
+
+    let dirs = if use_prebuilt {
         // Use the pre-generated bindings.
         //
         // Order matters here and is deliberate. Both `<pregen_libs_dir>/include`
@@ -137,6 +144,21 @@ fn main() -> Result<()> {
     };
 
     if let Some((bindings, libs_dir, include_dirs)) = dirs {
+        for hook in installed_hooks {
+            println!("cargo::rustc-cfg=mbedtls_hook=\"{}\"", hook.name());
+        }
+
+        // The installed hooks, for crates that implement them (e.g. hardware
+        // acceleration crates), as `DEP_MBEDTLS_HOOKS`
+        println!(
+            "cargo::metadata=hooks={}",
+            installed_hooks
+                .iter()
+                .map(Hook::name)
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+
         println!(
             "cargo::metadata=include={}",
             env::join_paths(include_dirs.iter())

@@ -8,8 +8,13 @@ use bindgen::Builder;
 use cmake::Config;
 use enumset::{enum_set, EnumSet, EnumSetType};
 
-// This set MUST contain all opt-out hooks
-pub const DEFAULT_HOOKS: EnumSet<Hook> = enum_set!(
+/// The hooks the committed prebuilt libraries and bindings are built with: all
+/// algorithm hooks
+///
+/// A build that asks for any subset of these can use the prebuilt artifacts,
+/// and then gets all of them installed (un-registered hooks fall back to the
+/// software implementations).
+pub const PREBUILT_HOOKS: EnumSet<Hook> = enum_set!(
     Hook::Sha1
         | Hook::Sha256
         | Hook::Sha512
@@ -47,6 +52,61 @@ pub enum Hook {
 }
 
 impl Hook {
+    /// The hooks to install, as selected by the `hook-*` features (read from
+    /// `CARGO_FEATURE_*`).
+    ///
+    /// A hook whose algorithm is not compiled in is left out.
+    pub fn active() -> EnumSet<Hook> {
+        let enabled = |feature: &str| std::env::var_os(feature).is_some();
+
+        EnumSet::<Hook>::all()
+            .iter()
+            .filter(|hook| enabled(hook.feature()) && hook.alg_feature().is_none_or(enabled))
+            .collect()
+    }
+
+    /// The name of the hook in the `hooks` metadata key of this crate.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Sha1 => "sha1",
+            Self::Sha256 => "sha256",
+            Self::Sha512 => "sha512",
+            Self::ExpMod => "exp_mod",
+            Self::Aes => "aes",
+            Self::EcpMul => "ecp_mul",
+            Self::EcpVerify => "ecp_verify",
+            Self::Timer => "timer",
+            Self::WallClock => "wall_clock",
+        }
+    }
+
+    /// The `hook-*` feature that selects this hook.
+    const fn feature(self) -> &'static str {
+        match self {
+            Self::Sha1 => "CARGO_FEATURE_HOOK_SHA1",
+            Self::Sha256 => "CARGO_FEATURE_HOOK_SHA256",
+            Self::Sha512 => "CARGO_FEATURE_HOOK_SHA512",
+            Self::ExpMod => "CARGO_FEATURE_HOOK_EXP_MOD",
+            Self::Aes => "CARGO_FEATURE_HOOK_AES",
+            Self::EcpMul => "CARGO_FEATURE_HOOK_ECP_MUL",
+            Self::EcpVerify => "CARGO_FEATURE_HOOK_ECP_VERIFY",
+            Self::Timer => "CARGO_FEATURE_HOOK_TIMER",
+            Self::WallClock => "CARGO_FEATURE_HOOK_WALL_CLOCK",
+        }
+    }
+
+    /// The `alg-*` feature the hook needs, if any.
+    const fn alg_feature(self) -> Option<&'static str> {
+        match self {
+            Self::Sha1 => Some("CARGO_FEATURE_ALG_SHA1"),
+            Self::Sha256 => Some("CARGO_FEATURE_ALG_SHA256"),
+            Self::Sha512 => Some("CARGO_FEATURE_ALG_SHA512"),
+            Self::Aes => Some("CARGO_FEATURE_ALG_AES"),
+            Self::EcpMul | Self::EcpVerify => Some("CARGO_FEATURE_ALG_ECP"),
+            Self::ExpMod | Self::Timer | Self::WallClock => None,
+        }
+    }
+
     /// The size of the `work_area` byte array in the hook's C context struct
     /// (see `gen/hook/*_alt.h`).
     ///
@@ -692,10 +752,10 @@ impl MbedtlsBuilder {
     }
 
     /// The config the committed prebuilt libraries/bindings were produced with:
-    /// the [`features::PREBUILT_FEATURES`] algorithm set plus [`DEFAULT_HOOKS`].
+    /// the [`features::PREBUILT_FEATURES`] algorithm set plus [`PREBUILT_HOOKS`].
     fn prebuilt_config() -> MbedtlsUserConfig {
         let mut config = features::prebuilt_features_config();
-        DEFAULT_HOOKS
+        PREBUILT_HOOKS
             .iter()
             .for_each(|hook| hook.apply_to_config(&mut config));
         config
@@ -704,19 +764,22 @@ impl MbedtlsBuilder {
     /// Decide whether the committed prebuilt libraries and bindings are valid
     /// for the given active features (read from `CARGO_FEATURE_*`) and `hooks`.
     ///
-    /// Returns `Ok(())` if the active config is byte-for-byte equivalent to the
-    /// prebuilt config (so the `.a` and bindings can be used as-is), or
-    /// `Err(delta)` describing how they differ (so the caller can rebuild on the
-    /// fly and explain why). This is exact in both directions: any added option
+    /// Returns `Ok(())` if the active config, with [`PREBUILT_HOOKS`] added to
+    /// `hooks`, is byte-for-byte equivalent to the prebuilt config (so the `.a`
+    /// and bindings can be used as-is, with all of [`PREBUILT_HOOKS`]
+    /// installed), or `Err(delta)` describing how they differ (so the caller can
+    /// rebuild on the fly and explain why). Apart from `hooks` being a subset of
+    /// [`PREBUILT_HOOKS`], this is exact in both directions: any added option
     /// (e.g. `kex-ecjpake` on top of `tls`), any removed option (a trimmed
-    /// profile), or any hook change rejects the prebuilt artifacts.
+    /// profile), or any other hook (e.g. the timer) rejects the prebuilt
+    /// artifacts.
     ///
     /// Takes `hooks` directly so the build script can call it before
     /// constructing a full [`MbedtlsBuilder`].
     pub fn prebuilt_validity(hooks: EnumSet<Hook>) -> Result<(), String> {
         let mut active = MbedtlsUserConfig::new();
         features::apply_features(&mut active);
-        hooks
+        (hooks | PREBUILT_HOOKS)
             .iter()
             .for_each(|hook| hook.apply_to_config(&mut active));
 

@@ -78,37 +78,37 @@ fn mpi() {
     run("MPI", mbedtls_mpi_self_test);
 }
 
-#[cfg(all(feature = "alg-aes", not(feature = "nohook-aes")))]
+#[cfg(mbedtls_hook = "aes")]
 #[test]
 fn aes_soft() {
     run("AES (soft)", mbedtls_aes_soft_self_test);
 }
 
-#[cfg(all(feature = "alg-sha1", not(feature = "nohook-sha1")))]
+#[cfg(mbedtls_hook = "sha1")]
 #[test]
 fn sha1_soft() {
     run("SHA-1 (soft)", mbedtls_sha1_soft_self_test);
 }
 
-#[cfg(all(feature = "alg-sha256", not(feature = "nohook-sha256")))]
+#[cfg(mbedtls_hook = "sha256")]
 #[test]
 fn sha224_soft() {
     run("SHA-224 (soft)", mbedtls_sha224_soft_self_test);
 }
 
-#[cfg(all(feature = "alg-sha256", not(feature = "nohook-sha256")))]
+#[cfg(mbedtls_hook = "sha256")]
 #[test]
 fn sha256_soft() {
     run("SHA-256 (soft)", mbedtls_sha256_soft_self_test);
 }
 
-#[cfg(all(feature = "alg-sha512", not(feature = "nohook-sha512")))]
+#[cfg(mbedtls_hook = "sha512")]
 #[test]
 fn sha384_soft() {
     run("SHA-384 (soft)", mbedtls_sha384_soft_self_test);
 }
 
-#[cfg(all(feature = "alg-sha512", not(feature = "nohook-sha512")))]
+#[cfg(mbedtls_hook = "sha512")]
 #[test]
 fn sha512_soft() {
     run("SHA-512 (soft)", mbedtls_sha512_soft_self_test);

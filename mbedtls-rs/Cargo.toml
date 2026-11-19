@@ -140,28 +140,20 @@ use-gcc = ["mbedtls-rs-sys/use-gcc"]
 force-generate-bindings = ["mbedtls-rs-sys/force-generate-bindings"]
 force-esp-riscv-gcc = ["mbedtls-rs-sys/force-esp-riscv-gcc"]
 
-nohook = ["mbedtls-rs-sys/nohook"]
-nohook-sha1 = ["mbedtls-rs-sys/nohook-sha1"]
-nohook-sha256 = ["mbedtls-rs-sys/nohook-sha256"]
-nohook-sha512 = ["mbedtls-rs-sys/nohook-sha512"]
-nohook-exp-mod = ["mbedtls-rs-sys/nohook-exp-mod"]
-
-# Time hooks: inclusion model (opt-in, new features)
+# Hooks (opt-in) — passthrough to mbedtls-rs-sys. The algorithm hooks are
+# normally enabled by a hardware acceleration crate (e.g. `mbedtls-rs-sys-esp`).
+hook-sha1 = ["mbedtls-rs-sys/hook-sha1"]
+hook-sha256 = ["mbedtls-rs-sys/hook-sha256"]
+hook-sha512 = ["mbedtls-rs-sys/hook-sha512"]
+hook-exp-mod = ["mbedtls-rs-sys/hook-exp-mod"]
+hook-aes = ["mbedtls-rs-sys/hook-aes"]
+hook-ecp-mul = ["mbedtls-rs-sys/hook-ecp-mul"]
+hook-ecp-verify = ["mbedtls-rs-sys/hook-ecp-verify"]
 hook-timer = ["mbedtls-rs-sys/hook-timer"]
 hook-wall-clock = ["mbedtls-rs-sys/hook-wall-clock"]
 
 # STD hook impls
 std = ["mbedtls-rs-sys/std"]
-
-# esp-hal hook impls
-esp32 = ["mbedtls-rs-sys/esp32"]
-esp32c2 = ["mbedtls-rs-sys/esp32c2"]
-esp32c3 = ["mbedtls-rs-sys/esp32c3"]
-esp32c5 = ["mbedtls-rs-sys/esp32c5"]
-esp32c6 = ["mbedtls-rs-sys/esp32c6"]
-esp32h2 = ["mbedtls-rs-sys/esp32h2"]
-esp32s2 = ["mbedtls-rs-sys/esp32s2"]
-esp32s3 = ["mbedtls-rs-sys/esp32s3"]
 
 # embassy-time hook impls, and `dtls::EmbassyClock`
 embassy-time = ["mbedtls-rs-sys/embassy-time", "dep:embassy-time"]

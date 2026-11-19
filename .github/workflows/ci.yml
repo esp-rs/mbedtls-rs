@@ -91,11 +91,16 @@ jobs:
       - name: Check - defmt
         run: cargo check -p mbedtls-rs --features defmt
 
+      # The hooks are off by default; test the hook layer and its software
+      # fallbacks with all of them on.
+      - name: Test - all hooks
+        run: cargo test -p mbedtls-rs -p mbedtls-rs-sys --features mbedtls-rs-sys/hook-sha1,mbedtls-rs-sys/hook-sha256,mbedtls-rs-sys/hook-sha512,mbedtls-rs-sys/hook-exp-mod,mbedtls-rs-sys/hook-aes,mbedtls-rs-sys/hook-ecp-mul,mbedtls-rs-sys/hook-ecp-verify
+
       # Host-only test of the ESP exp_mod routing logic (`_route-test` mounts
-      # `backend::esp::exp_mod_route` without `esp-hal`); not part of the
-      # default feature set, so it needs its own invocation.
+      # `exp_mod_route` without `esp-hal`); not part of the default feature
+      # set, so it needs its own invocation.
       - name: Test - ESP exp_mod routing
-        run: cargo test -p mbedtls-rs-sys --features _route-test --test exp_mod_route
+        run: cargo test -p mbedtls-rs-sys-esp --features _route-test --test exp_mod_route
 
       - name: Fmt Check - STD Examples
         run: cd examples/std; cargo fmt -- --check
