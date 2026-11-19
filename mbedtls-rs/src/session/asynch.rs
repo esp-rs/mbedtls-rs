@@ -180,6 +180,8 @@ where
             )?;
         }
 
+        self.state.reset()?;
+
         MBio::from_session(self).connect(saved_session).await?;
 
         self.connected = true;
@@ -747,8 +749,6 @@ where
     // NOT cancel-safe: see `Session::connect`'s `# Cancel safety`.
     async fn connect(&mut self, saved_session: Option<&SavedSession>) -> Result<(), SessionError> {
         debug!("Establishing SSL connection");
-
-        merr!(unsafe { mbedtls_ssl_session_reset(self.ssl_context.as_ptr()) })?;
 
         if let Some(saved_session) = saved_session {
             merr!(unsafe {

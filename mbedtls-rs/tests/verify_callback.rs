@@ -158,10 +158,13 @@ unsafe extern "C" fn observe(
 }
 
 fn server_config() -> SessionConfig<'static> {
-    SessionConfig::Server(ServerSessionConfig::new(Credentials {
-        certificate: Certificate::new_no_copy(CERTIFICATE).unwrap(),
-        private_key: PrivateKey::new(X509::DER(PRIVATE_KEY), None).unwrap(),
-    }))
+    SessionConfig::Server(ServerSessionConfig::new(
+        Credentials {
+            certificate: Certificate::new_no_copy(CERTIFICATE).unwrap(),
+            private_key: PrivateKey::new(X509::DER(PRIVATE_KEY), None).unwrap(),
+        }
+        .into(),
+    ))
 }
 
 fn idle_session(config: &SessionConfig<'_>) -> Result<(), SessionError> {

@@ -5,6 +5,14 @@ Rust library implementing transparent TLS encryption/decryption for IO streams.
 
 Uses MbedTLS 3.X under the hood, via `mbedtls-rs-sys`.
 
+## Authentication
+
+A session proves to its peer who it is with an `Authentication`: a certificate and its private key, a pre-shared key (`Authentication::Psk`, or `Authentication::PskLookup` for a server with a key for each client) or, with the `kex-ecjpake` feature, an EC J-PAKE password. On ESP-IDF, MbedTLS is ESP-IDF's, and pre-shared keys and EC J-PAKE follow its configuration.
+
+## DTLS
+
+The `dtls` module has DTLS 1.2 sessions over datagram transports. A session times the retransmissions of its handshake with a `dtls::Clock`; `dtls::EmbassyClock` is one, with the `embassy-time` feature. A server session first checks, with a cookie, that its client receives at the address it sends from (`dtls::CookieCheck`), so that a forged address does not get the server's flights. With the `kex-ecjpake` feature, a session can use an EC J-PAKE handshake instead of certificates (`Authentication::EcJpake`), as Thread commissioning does.
+
 ## Certificate validity dates
 
 By default the `notBefore` / `notAfter` window of a peer certificate is **not** checked, so an expired or not-yet-valid certificate is accepted even under `AuthMode::Required`. Chain, signature and hostname verification are unaffected.

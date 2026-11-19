@@ -95,7 +95,13 @@ fn main() -> Result<()> {
 
         Some((pregen_bindings_rs_file, pregen_libs_dir, include_dirs))
     } else if target.ends_with("-espidf") {
-        // Nothing to do for ESP-IDF, `esp-idf-sys` will do everything for us
+        // Nothing to do for ESP-IDF, `esp-idf-sys` will do everything for us.
+        // Our dependents get ESP-IDF's configuration, which has MbedTLS's
+        // options, as `DEP_MBEDTLS_EMBUILD_CFG_ARGS`.
+        if let Ok(cfg_args) = embuild::build::CfgArgs::try_from_env("ESP_IDF") {
+            cfg_args.propagate();
+        }
+
         None
     } else {
         if pregen_bindings_rs_file.exists() {
@@ -116,7 +122,7 @@ fn main() -> Result<()> {
             hooks,
             !use_gcc,
             crate_root_path.clone(),
-            Some(target),
+            Some(target.clone()),
             Some(host),
             None,
             sysroot,
@@ -159,6 +165,14 @@ fn main() -> Result<()> {
 
                 println!("cargo::rustc-link-lib=static={lib_name}");
             }
+        }
+
+        // MbedTLS calls `printf` (self tests), `snprintf` and `vsnprintf`. The
+        // UCRT has these only inline, in its headers; MSVC's
+        // `legacy_stdio_definitions` has them as symbols. The MSVC linkers need
+        // them even when only unused code calls them.
+        if target.ends_with("-windows-msvc") {
+            println!("cargo::rustc-link-lib=legacy_stdio_definitions");
         }
     }
 

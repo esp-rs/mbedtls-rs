@@ -70,10 +70,13 @@ fn client_config(maximum_version: Option<TlsVersion>) -> SessionConfig<'static> 
 
 fn server_config() -> SessionConfig<'static> {
     let certificate = Certificate::new_no_copy(CERTIFICATE).unwrap();
-    SessionConfig::Server(ServerSessionConfig::new(Credentials {
-        certificate,
-        private_key: PrivateKey::new(X509::DER(PRIVATE_KEY), None).unwrap(),
-    }))
+    SessionConfig::Server(ServerSessionConfig::new(
+        Credentials {
+            certificate,
+            private_key: PrivateKey::new(X509::DER(PRIVATE_KEY), None).unwrap(),
+        }
+        .into(),
+    ))
 }
 
 /// A completed handshake must report a version, and a client cap must be exactly

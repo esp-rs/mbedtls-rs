@@ -27,7 +27,8 @@
 //! This crate does not provide implementations of these functions. It's up to
 //! the consumer to ensure that they are available at link time. On most
 //! platforms, these functions are provided by the host environment's libc
-//! implementation, so no additional work is needed.
+//! implementation, so no additional work is needed. On MSVC targets, this
+//! crate links `legacy_stdio_definitions`, which has the `printf` family.
 //! On embedded platforms, you may need to link a suitable libc implementation
 //! like [tinyrlibc](https://github.com/rust-embedded-community/tinyrlibc).
 //!

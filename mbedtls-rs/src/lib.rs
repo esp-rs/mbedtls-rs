@@ -401,6 +401,18 @@ where
     fn as_mut_ptr(&mut self) -> *mut T {
         self.0.as_ptr()
     }
+
+    /// Get the raw pointer to the inner value, from a shared `MBox`.
+    ///
+    /// As with [`MBox::as_mut_ptr`], it is the original allocation pointer,
+    /// which C code may write through. But `&self` does not keep Rust
+    /// references to the inner value away: the caller must not hold one while
+    /// C code writes. Used for MbedTLS state that several sessions share and
+    /// MbedTLS updates from within their calls (the DTLS cookies).
+    #[allow(unused)]
+    fn as_shared_ptr(&self) -> *mut T {
+        self.0.as_ptr()
+    }
 }
 
 impl<T> Deref for MBox<T>

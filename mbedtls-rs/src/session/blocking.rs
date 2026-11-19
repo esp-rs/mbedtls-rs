@@ -138,7 +138,7 @@ where
             return Ok(());
         }
 
-        merr!(unsafe { mbedtls_ssl_session_reset(&mut *self.state.ssl_context) })?;
+        self.state.reset()?;
 
         if let Some(saved_session) = saved_session {
             // Reject resuming a session captured for a different server name
