@@ -29,6 +29,25 @@
 
 #![no_std]
 
+// On the host, the crate is empty without a chip, so that the workspace and the publish check build
+#[cfg(all(
+    target_os = "none",
+    not(any(
+        feature = "esp32",
+        feature = "esp32c2",
+        feature = "esp32c3",
+        feature = "esp32c5",
+        feature = "esp32c6",
+        feature = "esp32h2",
+        feature = "esp32s2",
+        feature = "esp32s3"
+    ))
+))]
+compile_error!(
+    "mbedtls-rs-sys-esp: select the chip with one of the features esp32, esp32c2, esp32c3, \
+     esp32c5, esp32c6, esp32h2, esp32s2, esp32s3"
+);
+
 #[cfg(all(feature = "esp-hal", not(feature = "esp32c2"), mbedtls_hook = "aes"))]
 pub mod aes;
 #[cfg(feature = "esp-hal")]
