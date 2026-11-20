@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "mbedtls-rs",
     "mbedtls-rs-sys",
+    "mbedtls-rs-sys-esp",
 ]
 
 exclude = ["examples", "xtask"]

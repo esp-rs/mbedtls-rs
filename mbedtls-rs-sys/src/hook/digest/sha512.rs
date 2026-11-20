@@ -17,7 +17,7 @@ impl<T: Deref> MbedtlsSha384 for T where T::Target: MbedtlsSha384 {}
 ///   the behavior of MbedTLS. The caller MUST call this hook BEFORE
 ///   any MbedTLS functions that use SHA-512 or SHA-384, and ensure that the
 ///   `sha512` or `sha384` implementation is valid for the duration of its use.
-#[cfg(all(feature = "alg-sha512", not(feature = "nohook-sha512")))]
+#[cfg(mbedtls_hook = "sha512")]
 pub unsafe fn hook_sha512(sha512: Option<&'static (dyn MbedtlsSha512 + Send + Sync)>) {
     critical_section::with(|cs| {
         #[allow(clippy::if_same_then_else)]
@@ -38,7 +38,7 @@ pub unsafe fn hook_sha512(sha512: Option<&'static (dyn MbedtlsSha512 + Send + Sy
 ///   the behavior of MbedTLS. The caller MUST call this hook BEFORE
 ///   any MbedTLS functions that use SHA-384, and ensure that the
 ///   `sha384` implementation is valid for the duration of its use.
-#[cfg(all(feature = "alg-sha512", not(feature = "nohook-sha512")))]
+#[cfg(mbedtls_hook = "sha512")]
 pub unsafe fn hook_sha384(sha384: Option<&'static (dyn MbedtlsSha384 + Send + Sync)>) {
     critical_section::with(|cs| {
         #[allow(clippy::if_same_then_else)]
@@ -52,10 +52,10 @@ pub unsafe fn hook_sha384(sha384: Option<&'static (dyn MbedtlsSha384 + Send + Sy
     });
 }
 
-#[cfg(all(feature = "alg-sha512", not(feature = "nohook-sha512")))]
+#[cfg(mbedtls_hook = "sha512")]
 pub use alt::{SoftSha384, SoftSha512};
 
-#[cfg(all(feature = "alg-sha512", not(feature = "nohook-sha512")))]
+#[cfg(mbedtls_hook = "sha512")]
 mod alt {
     use core::cell::Cell;
     use core::ffi::{c_int, c_uchar};

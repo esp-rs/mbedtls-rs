@@ -52,7 +52,7 @@ where
 ///   the behavior of MbedTLS. The caller MUST call this hook BEFORE
 ///   any MbedTLS functions that use modular exponentiation, and ensure that the
 ///   `exp_mod` implementation is valid for the duration of its use.
-#[cfg(not(feature = "nohook-exp-mod"))]
+#[cfg(mbedtls_hook = "exp_mod")]
 pub unsafe fn hook_exp_mod(exp_mod: Option<&'static (dyn MbedtlsMpiExpMod + Send + Sync)>) {
     critical_section::with(|cs| {
         #[allow(clippy::if_same_then_else)]
@@ -66,7 +66,7 @@ pub unsafe fn hook_exp_mod(exp_mod: Option<&'static (dyn MbedtlsMpiExpMod + Send
     });
 }
 
-#[cfg(not(feature = "nohook-exp-mod"))]
+#[cfg(mbedtls_hook = "exp_mod")]
 mod alt {
     use core::cell::Cell;
     use core::ffi::c_int;

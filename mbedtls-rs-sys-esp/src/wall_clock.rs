@@ -1,7 +1,7 @@
 use core::marker::PhantomData;
 
-use crate::bindings::tm;
-use crate::hook::wall_clock::MbedtlsWallClock;
+use mbedtls_rs_sys::hook::wall_clock::MbedtlsWallClock;
+use mbedtls_rs_sys::tm;
 
 /// ESP RTC-based wall clock backend for MbedTLS certificate validation.
 ///
@@ -9,9 +9,9 @@ use crate::hook::wall_clock::MbedtlsWallClock;
 /// initialized with the correct time before use (e.g., via NTP).
 ///
 /// # Usage
-/// ```no_run
-/// use esp_mbedtls_sys::hook::backend::esp::wall_clock::EspRtcWallClock;
-/// use esp_mbedtls_sys::hook::wall_clock::hook_wall_clock;
+/// ```ignore
+/// use mbedtls_rs_sys_esp::wall_clock::EspRtcWallClock;
+/// use mbedtls_rs_sys::hook::wall_clock::hook_wall_clock;
 ///
 /// // The wall clock must be static (using static_cell or similar)
 /// let rtc = esp_hal::rtc_cntl::Rtc = /* ... */;

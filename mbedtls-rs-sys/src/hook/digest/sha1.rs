@@ -16,7 +16,7 @@ impl<T: Deref> MbedtlsSha1 for T where T::Target: MbedtlsSha1 {}
 ///   the behavior of MbedTLS. The caller MUST call this hook BEFORE
 ///   any MbedTLS functions that use SHA-1, and ensure that the
 ///   `sha1` implementation is valid for the duration of its use.
-#[cfg(all(feature = "alg-sha1", not(feature = "nohook-sha1")))]
+#[cfg(mbedtls_hook = "sha1")]
 pub unsafe fn hook_sha1(sha1: Option<&'static (dyn MbedtlsSha1 + Send + Sync)>) {
     critical_section::with(|cs| {
         #[allow(clippy::if_same_then_else)]
@@ -30,10 +30,10 @@ pub unsafe fn hook_sha1(sha1: Option<&'static (dyn MbedtlsSha1 + Send + Sync)>) 
     });
 }
 
-#[cfg(all(feature = "alg-sha1", not(feature = "nohook-sha1")))]
+#[cfg(mbedtls_hook = "sha1")]
 pub use alt::SoftSha1;
 
-#[cfg(all(feature = "alg-sha1", not(feature = "nohook-sha1")))]
+#[cfg(mbedtls_hook = "sha1")]
 mod alt {
     use core::cell::Cell;
     use core::ffi::{c_int, c_uchar};

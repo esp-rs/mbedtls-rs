@@ -120,7 +120,7 @@ where
 /// # Safety
 /// - The raw `f_rng`/`p_rng`/`rs_ctx` values must be valid for the duration
 ///   of the call (they are normally just passed through from the hook).
-#[cfg(all(feature = "alg-ecp", not(feature = "nohook-ecp-mul")))]
+#[cfg(mbedtls_hook = "ecp_mul")]
 #[allow(clippy::too_many_arguments)]
 pub unsafe fn ecp_mul_soft(
     grp: &mut mbedtls_ecp_group,
@@ -142,7 +142,7 @@ pub unsafe fn ecp_mul_soft(
 ///
 /// Available for hooked implementations to delegate to (e.g. for curves not
 /// supported by their hardware).
-#[cfg(all(feature = "alg-ecp", not(feature = "nohook-ecp-verify")))]
+#[cfg(mbedtls_hook = "ecp_verify")]
 pub fn ecp_check_pubkey_soft(
     grp: &mbedtls_ecp_group,
     pt: &mbedtls_ecp_point,
@@ -159,7 +159,7 @@ pub fn ecp_check_pubkey_soft(
 ///   the behavior of MbedTLS. The caller MUST call this hook BEFORE
 ///   any MbedTLS functions that use ECP, and ensure that the implementation
 ///   is valid for the duration of its use.
-#[cfg(all(feature = "alg-ecp", not(feature = "nohook-ecp-mul")))]
+#[cfg(mbedtls_hook = "ecp_mul")]
 pub unsafe fn hook_ecp_mul(ecp_mul: Option<&'static (dyn MbedtlsEcpMul + Send + Sync)>) {
     critical_section::with(|cs| {
         #[allow(clippy::if_same_then_else)]
@@ -180,7 +180,7 @@ pub unsafe fn hook_ecp_mul(ecp_mul: Option<&'static (dyn MbedtlsEcpMul + Send + 
 ///   the behavior of MbedTLS. The caller MUST call this hook BEFORE
 ///   any MbedTLS functions that use ECP, and ensure that the implementation
 ///   is valid for the duration of its use.
-#[cfg(all(feature = "alg-ecp", not(feature = "nohook-ecp-verify")))]
+#[cfg(mbedtls_hook = "ecp_verify")]
 pub unsafe fn hook_ecp_verify(ecp_verify: Option<&'static (dyn MbedtlsEcpVerify + Send + Sync)>) {
     critical_section::with(|cs| {
         #[allow(clippy::if_same_then_else)]
@@ -194,7 +194,7 @@ pub unsafe fn hook_ecp_verify(ecp_verify: Option<&'static (dyn MbedtlsEcpVerify 
     });
 }
 
-#[cfg(all(feature = "alg-ecp", not(feature = "nohook-ecp-mul")))]
+#[cfg(mbedtls_hook = "ecp_mul")]
 mod mul_alt {
     use core::cell::Cell;
     use core::ffi::{c_int, c_void};
@@ -238,7 +238,7 @@ mod mul_alt {
     }
 }
 
-#[cfg(all(feature = "alg-ecp", not(feature = "nohook-ecp-verify")))]
+#[cfg(mbedtls_hook = "ecp_verify")]
 mod verify_alt {
     use core::cell::Cell;
     use core::ffi::c_int;

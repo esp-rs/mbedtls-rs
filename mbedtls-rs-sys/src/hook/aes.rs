@@ -24,10 +24,10 @@ use core::ops::Deref;
 
 use crate::hook::WorkAreaMemory;
 use crate::MbedtlsError;
-#[cfg(all(feature = "alg-aes", not(feature = "nohook-aes")))]
+#[cfg(mbedtls_hook = "aes")]
 use crate::{MBEDTLS_ERR_AES_BAD_INPUT_DATA, MBEDTLS_ERR_AES_INVALID_KEY_LENGTH};
 
-#[cfg(all(feature = "alg-aes", not(feature = "nohook-aes")))]
+#[cfg(mbedtls_hook = "aes")]
 use super::WorkArea;
 
 /// The AES block size, in bytes
@@ -196,13 +196,13 @@ fn xor_in_place(block: &mut AesBlock, other: &AesBlock) {
 ///
 /// Plain-old-data: just the MbedTLS key schedule plus the direction the key
 /// was scheduled for.
-#[cfg(all(feature = "alg-aes", not(feature = "nohook-aes")))]
+#[cfg(mbedtls_hook = "aes")]
 pub struct SoftAesState {
     ctx: crate::mbedtls_aes_soft_context,
     dec: bool,
 }
 
-#[cfg(all(feature = "alg-aes", not(feature = "nohook-aes")))]
+#[cfg(mbedtls_hook = "aes")]
 impl SoftAesState {
     /// Create a new encryption state by scheduling `key` (16, 24 or 32 bytes)
     pub fn new_enc(key: &[u8]) -> Result<Self, MbedtlsError> {
@@ -311,10 +311,10 @@ impl SoftAesState {
 
 /// MbedTLS AES implementation that delegates to the MbedTLS software AES
 /// implementation; the fallback when no custom implementation is hooked
-#[cfg(all(feature = "alg-aes", not(feature = "nohook-aes")))]
+#[cfg(mbedtls_hook = "aes")]
 pub struct SoftAes(());
 
-#[cfg(all(feature = "alg-aes", not(feature = "nohook-aes")))]
+#[cfg(mbedtls_hook = "aes")]
 impl SoftAes {
     /// Create a new `SoftAes` instance
     pub const fn new() -> Self {
@@ -322,14 +322,14 @@ impl SoftAes {
     }
 }
 
-#[cfg(all(feature = "alg-aes", not(feature = "nohook-aes")))]
+#[cfg(mbedtls_hook = "aes")]
 impl Default for SoftAes {
     fn default() -> Self {
         Self::new()
     }
 }
 
-#[cfg(all(feature = "alg-aes", not(feature = "nohook-aes")))]
+#[cfg(mbedtls_hook = "aes")]
 impl MbedtlsAes for SoftAes {
     fn init(&self, memory: &mut WorkAreaMemory) {
         unsafe { memory.cast_mut_maybe::<Option<SoftAesState>>() }.write(None);
@@ -410,7 +410,7 @@ impl MbedtlsAes for SoftAes {
 ///   any MbedTLS functions that use AES (including any that were only
 ///   initialized earlier, such as a CTR-DRBG instance), and ensure that the
 ///   `aes` implementation is valid for the duration of its use.
-#[cfg(all(feature = "alg-aes", not(feature = "nohook-aes")))]
+#[cfg(mbedtls_hook = "aes")]
 pub unsafe fn hook_aes(aes: Option<&'static (dyn MbedtlsAes + Send + Sync)>) {
     critical_section::with(|cs| {
         #[allow(clippy::if_same_then_else)]
@@ -424,7 +424,7 @@ pub unsafe fn hook_aes(aes: Option<&'static (dyn MbedtlsAes + Send + Sync)>) {
     });
 }
 
-#[cfg(all(feature = "alg-aes", not(feature = "nohook-aes")))]
+#[cfg(mbedtls_hook = "aes")]
 mod alt {
     use core::cell::Cell;
     use core::ffi::{c_int, c_uchar, c_uint};

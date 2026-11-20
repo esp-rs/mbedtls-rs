@@ -13,8 +13,8 @@ use core::ffi::c_void;
 
 use esp_hal::ecc::EllipticCurve;
 
-use crate::hook::ecp::{MbedtlsEcpRestartCtx, MbedtlsFRng};
-use crate::{
+use mbedtls_rs_sys::hook::ecp::{MbedtlsEcpRestartCtx, MbedtlsFRng};
+use mbedtls_rs_sys::{
     mbedtls_ecp_group, mbedtls_ecp_group_id_MBEDTLS_ECP_DP_SECP192R1,
     mbedtls_ecp_group_id_MBEDTLS_ECP_DP_SECP256R1, mbedtls_ecp_point, mbedtls_mpi,
     mbedtls_mpi_cmp_int, mbedtls_mpi_cmp_mpi, mbedtls_mpi_lset, mbedtls_mpi_read_binary_le,
@@ -85,8 +85,8 @@ fn hw_point_operands(
     Some((to_le(&pt.private_X, size)?, to_le(&pt.private_Y, size)?))
 }
 
-#[cfg(not(feature = "nohook-ecp-mul"))]
-impl crate::hook::ecp::MbedtlsEcpMul for EspEcc {
+#[cfg(mbedtls_hook = "ecp_mul")]
+impl mbedtls_rs_sys::hook::ecp::MbedtlsEcpMul for EspEcc {
     unsafe fn mul(
         &self,
         grp: &mut mbedtls_ecp_group,
@@ -98,7 +98,7 @@ impl crate::hook::ecp::MbedtlsEcpMul for EspEcc {
         rs_ctx: *mut MbedtlsEcpRestartCtx,
     ) -> Result<(), MbedtlsError> {
         let soft = |grp: &mut mbedtls_ecp_group, r: &mut mbedtls_ecp_point| unsafe {
-            crate::hook::ecp::ecp_mul_soft(grp, r, m, p, f_rng, p_rng, rs_ctx)
+            mbedtls_rs_sys::hook::ecp::ecp_mul_soft(grp, r, m, p, f_rng, p_rng, rs_ctx)
         };
 
         let Some(curve) = curve(grp) else {
@@ -155,27 +155,27 @@ impl crate::hook::ecp::MbedtlsEcpMul for EspEcc {
     }
 }
 
-#[cfg(not(feature = "nohook-ecp-verify"))]
-impl crate::hook::ecp::MbedtlsEcpVerify for EspEcc {
+#[cfg(mbedtls_hook = "ecp_verify")]
+impl mbedtls_rs_sys::hook::ecp::MbedtlsEcpVerify for EspEcc {
     fn check_pubkey(
         &self,
         grp: &mbedtls_ecp_group,
         pt: &mbedtls_ecp_point,
     ) -> Result<(), MbedtlsError> {
         let Some(curve) = curve(grp) else {
-            return crate::hook::ecp::ecp_check_pubkey_soft(grp, pt);
+            return mbedtls_rs_sys::hook::ecp::ecp_check_pubkey_soft(grp, pt);
         };
         let size = curve.size();
 
         // Delegate the error paths (infinity, non-affine, out-of-range
         // coordinates) to software for canonical error codes
         let Some((px, py)) = hw_point_operands(grp, pt, size) else {
-            return crate::hook::ecp::ecp_check_pubkey_soft(grp, pt);
+            return mbedtls_rs_sys::hook::ecp::ecp_check_pubkey_soft(grp, pt);
         };
 
         let Ok(mut op) = EllipticCurve::affine_point_verification(curve, &px[..size], &py[..size])
         else {
-            return crate::hook::ecp::ecp_check_pubkey_soft(grp, pt);
+            return mbedtls_rs_sys::hook::ecp::ecp_check_pubkey_soft(grp, pt);
         };
 
         op.process().wait_blocking();

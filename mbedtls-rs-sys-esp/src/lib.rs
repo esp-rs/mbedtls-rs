@@ -1,4 +1,10 @@
-//! ESP32XX hardware acceleration modules based on the baremetal `esp-hal` crate.
+//! Hardware acceleration of MbedTLS for the ESP32 chips, based on the baremetal
+//! `esp-hal` crate.
+//!
+//! The chip feature (`esp32`, `esp32c6`, ...) enables the `mbedtls-rs-sys`
+//! hooks of the accelerators the chip has. A hook is only installed if its
+//! algorithm is compiled into MbedTLS as well; for algorithms that are not,
+//! nothing is accelerated.
 //!
 //! Hardware acceleration involves two *independent* concerns, mirroring the
 //! `esp-hal` work-queue design:
@@ -21,12 +27,28 @@
 //! safely by construction: it hooks exactly the algorithms whose queues are
 //! being serviced, and the returned guard cannot outlive them.
 
+#![no_std]
+
+// On the host, the crate is empty without a chip, so that the workspace and the publish check build
 #[cfg(all(
-    feature = "esp-hal",
-    not(feature = "esp32c2"),
-    feature = "alg-aes",
-    not(feature = "nohook-aes")
+    target_os = "none",
+    not(any(
+        feature = "esp32",
+        feature = "esp32c2",
+        feature = "esp32c3",
+        feature = "esp32c5",
+        feature = "esp32c6",
+        feature = "esp32h2",
+        feature = "esp32s2",
+        feature = "esp32s3"
+    ))
 ))]
+compile_error!(
+    "mbedtls-rs-sys-esp: select the chip with one of the features esp32, esp32c2, esp32c3, \
+     esp32c5, esp32c6, esp32h2, esp32s2, esp32s3"
+);
+
+#[cfg(all(feature = "esp-hal", not(feature = "esp32c2"), mbedtls_hook = "aes"))]
 pub mod aes;
 #[cfg(feature = "esp-hal")]
 pub mod digest;
@@ -37,12 +59,13 @@ pub mod digest;
         feature = "esp32c6",
         feature = "esp32h2"
     ),
-    feature = "alg-ecp"
+    any(mbedtls_hook = "ecp_mul", mbedtls_hook = "ecp_verify")
 ))]
 pub mod ecc;
 #[cfg(all(
     feature = "esp-hal",
-    not(any(feature = "esp32c2", feature = "nohook-exp-mod"))
+    not(feature = "esp32c2"),
+    mbedtls_hook = "exp_mod"
 ))]
 pub mod exp_mod;
 // Pure routing logic (no `esp-hal` dependency). Mounted `pub` on the host
@@ -50,7 +73,8 @@ pub mod exp_mod;
 // exercise it without an ESP target; `pub(crate)` in production builds.
 #[cfg(all(
     feature = "esp-hal",
-    not(any(feature = "esp32c2", feature = "nohook-exp-mod"))
+    not(feature = "esp32c2"),
+    mbedtls_hook = "exp_mod"
 ))]
 pub(crate) mod exp_mod_route;
 #[cfg(all(not(feature = "esp-hal"), feature = "_route-test"))]
@@ -60,7 +84,7 @@ pub mod exp_mod_route;
 // c5 LP_TIMER driver.
 #[cfg(all(
     feature = "esp-hal",
-    feature = "hook-wall-clock",
+    mbedtls_hook = "wall_clock",
     not(feature = "esp32c5")
 ))]
 pub mod wall_clock;
@@ -77,15 +101,11 @@ pub static SHA384: digest::EspSha384 = digest::EspSha384::new();
 pub static SHA512: digest::EspSha512 = digest::EspSha512::new();
 #[cfg(all(
     feature = "esp-hal",
-    not(any(feature = "esp32c2", feature = "nohook-exp-mod"))
+    not(feature = "esp32c2"),
+    mbedtls_hook = "exp_mod"
 ))]
 pub static EXP_MOD: exp_mod::EspExpMod = exp_mod::EspExpMod::new();
-#[cfg(all(
-    feature = "esp-hal",
-    not(feature = "esp32c2"),
-    feature = "alg-aes",
-    not(feature = "nohook-aes")
-))]
+#[cfg(all(feature = "esp-hal", not(feature = "esp32c2"), mbedtls_hook = "aes"))]
 pub static AES: aes::EspAes = aes::EspAes::new();
 #[cfg(all(
     any(
@@ -94,7 +114,7 @@ pub static AES: aes::EspAes = aes::EspAes::new();
         feature = "esp32c6",
         feature = "esp32h2"
     ),
-    feature = "alg-ecp"
+    any(mbedtls_hook = "ecp_mul", mbedtls_hook = "ecp_verify")
 ))]
 pub static ECC: ecc::EspEcc = ecc::EspEcc::new();
 
@@ -319,9 +339,9 @@ impl EspAccelQueue<'_, '_> {
 ///
 /// Granularity is the hardware unit: [`with_sha`](EspHooks::with_sha) covers
 /// every SHA digest the chip accelerates, [`with_ecc`](EspHooks::with_ecc)
-/// covers both the ECP-mul and ECP-verify hooks, etc. Individual algorithms
-/// within a unit can still be excluded at compile time via the `nohook-*`
-/// crate features (an entirely `nohook`-ed unit's `with_*` is a no-op).
+/// covers both the ECP-mul and ECP-verify hooks, etc. Algorithms that are
+/// not compiled into MbedTLS are skipped, so for a unit without any of them
+/// `with_*` does nothing.
 ///
 /// This registers work-queue *clients* only — someone must **service** those
 /// queues: either an [`EspAccel`]/[`EspAccelQueue`] or `esp-hal` crypto
@@ -435,71 +455,56 @@ impl EspHooks {
     unsafe fn apply(&self) {
         #[cfg(not(feature = "esp32"))]
         if self.sha {
-            #[cfg(all(feature = "alg-sha1", not(feature = "nohook-sha1")))]
+            #[cfg(mbedtls_hook = "sha1")]
             unsafe {
-                crate::hook::digest::hook_sha1(Some(&SHA1));
+                mbedtls_rs_sys::hook::digest::hook_sha1(Some(&SHA1));
             }
-            #[cfg(all(feature = "alg-sha256", not(feature = "nohook-sha256")))]
+            #[cfg(mbedtls_hook = "sha256")]
             unsafe {
-                crate::hook::digest::hook_sha224(Some(&SHA224));
+                mbedtls_rs_sys::hook::digest::hook_sha224(Some(&SHA224));
             }
-            #[cfg(all(feature = "alg-sha256", not(feature = "nohook-sha256")))]
+            #[cfg(mbedtls_hook = "sha256")]
             unsafe {
-                crate::hook::digest::hook_sha256(Some(&SHA256));
+                mbedtls_rs_sys::hook::digest::hook_sha256(Some(&SHA256));
             }
-            #[cfg(all(
-                any(feature = "esp32s2", feature = "esp32s3"),
-                feature = "alg-sha512",
-                not(feature = "nohook-sha512")
-            ))]
+            #[cfg(all(any(feature = "esp32s2", feature = "esp32s3"), mbedtls_hook = "sha512"))]
             unsafe {
-                crate::hook::digest::hook_sha384(Some(&SHA384));
+                mbedtls_rs_sys::hook::digest::hook_sha384(Some(&SHA384));
             }
-            #[cfg(all(
-                any(feature = "esp32s2", feature = "esp32s3"),
-                feature = "alg-sha512",
-                not(feature = "nohook-sha512")
-            ))]
+            #[cfg(all(any(feature = "esp32s2", feature = "esp32s3"), mbedtls_hook = "sha512"))]
             unsafe {
-                crate::hook::digest::hook_sha512(Some(&SHA512));
+                mbedtls_rs_sys::hook::digest::hook_sha512(Some(&SHA512));
             }
         }
 
-        #[cfg(all(not(feature = "esp32c2"), not(feature = "nohook-exp-mod")))]
+        #[cfg(all(not(feature = "esp32c2"), mbedtls_hook = "exp_mod"))]
         if self.exp_mod {
             unsafe {
-                crate::hook::exp_mod::hook_exp_mod(Some(&EXP_MOD));
+                mbedtls_rs_sys::hook::exp_mod::hook_exp_mod(Some(&EXP_MOD));
             }
         }
 
-        #[cfg(all(
-            not(feature = "esp32c2"),
-            feature = "alg-aes",
-            not(feature = "nohook-aes")
-        ))]
+        #[cfg(all(not(feature = "esp32c2"), mbedtls_hook = "aes"))]
         if self.aes {
             unsafe {
-                crate::hook::aes::hook_aes(Some(&AES));
+                mbedtls_rs_sys::hook::aes::hook_aes(Some(&AES));
             }
         }
 
-        #[cfg(all(
-            any(
-                feature = "esp32c2",
-                feature = "esp32c5",
-                feature = "esp32c6",
-                feature = "esp32h2"
-            ),
-            feature = "alg-ecp"
+        #[cfg(any(
+            feature = "esp32c2",
+            feature = "esp32c5",
+            feature = "esp32c6",
+            feature = "esp32h2"
         ))]
         if self.ecc {
-            #[cfg(not(feature = "nohook-ecp-mul"))]
+            #[cfg(mbedtls_hook = "ecp_mul")]
             unsafe {
-                crate::hook::ecp::hook_ecp_mul(Some(&ECC));
+                mbedtls_rs_sys::hook::ecp::hook_ecp_mul(Some(&ECC));
             }
-            #[cfg(not(feature = "nohook-ecp-verify"))]
+            #[cfg(mbedtls_hook = "ecp_verify")]
             unsafe {
-                crate::hook::ecp::hook_ecp_verify(Some(&ECC));
+                mbedtls_rs_sys::hook::ecp::hook_ecp_verify(Some(&ECC));
             }
         }
     }
@@ -512,71 +517,56 @@ impl EspHooks {
     unsafe fn unapply(&self) {
         #[cfg(not(feature = "esp32"))]
         if self.sha {
-            #[cfg(all(feature = "alg-sha1", not(feature = "nohook-sha1")))]
+            #[cfg(mbedtls_hook = "sha1")]
             unsafe {
-                crate::hook::digest::hook_sha1(None);
+                mbedtls_rs_sys::hook::digest::hook_sha1(None);
             }
-            #[cfg(all(feature = "alg-sha256", not(feature = "nohook-sha256")))]
+            #[cfg(mbedtls_hook = "sha256")]
             unsafe {
-                crate::hook::digest::hook_sha224(None);
+                mbedtls_rs_sys::hook::digest::hook_sha224(None);
             }
-            #[cfg(all(feature = "alg-sha256", not(feature = "nohook-sha256")))]
+            #[cfg(mbedtls_hook = "sha256")]
             unsafe {
-                crate::hook::digest::hook_sha256(None);
+                mbedtls_rs_sys::hook::digest::hook_sha256(None);
             }
-            #[cfg(all(
-                any(feature = "esp32s2", feature = "esp32s3"),
-                feature = "alg-sha512",
-                not(feature = "nohook-sha512")
-            ))]
+            #[cfg(all(any(feature = "esp32s2", feature = "esp32s3"), mbedtls_hook = "sha512"))]
             unsafe {
-                crate::hook::digest::hook_sha384(None);
+                mbedtls_rs_sys::hook::digest::hook_sha384(None);
             }
-            #[cfg(all(
-                any(feature = "esp32s2", feature = "esp32s3"),
-                feature = "alg-sha512",
-                not(feature = "nohook-sha512")
-            ))]
+            #[cfg(all(any(feature = "esp32s2", feature = "esp32s3"), mbedtls_hook = "sha512"))]
             unsafe {
-                crate::hook::digest::hook_sha512(None);
+                mbedtls_rs_sys::hook::digest::hook_sha512(None);
             }
         }
 
-        #[cfg(all(not(feature = "esp32c2"), not(feature = "nohook-exp-mod")))]
+        #[cfg(all(not(feature = "esp32c2"), mbedtls_hook = "exp_mod"))]
         if self.exp_mod {
             unsafe {
-                crate::hook::exp_mod::hook_exp_mod(None);
+                mbedtls_rs_sys::hook::exp_mod::hook_exp_mod(None);
             }
         }
 
-        #[cfg(all(
-            not(feature = "esp32c2"),
-            feature = "alg-aes",
-            not(feature = "nohook-aes")
-        ))]
+        #[cfg(all(not(feature = "esp32c2"), mbedtls_hook = "aes"))]
         if self.aes {
             unsafe {
-                crate::hook::aes::hook_aes(None);
+                mbedtls_rs_sys::hook::aes::hook_aes(None);
             }
         }
 
-        #[cfg(all(
-            any(
-                feature = "esp32c2",
-                feature = "esp32c5",
-                feature = "esp32c6",
-                feature = "esp32h2"
-            ),
-            feature = "alg-ecp"
+        #[cfg(any(
+            feature = "esp32c2",
+            feature = "esp32c5",
+            feature = "esp32c6",
+            feature = "esp32h2"
         ))]
         if self.ecc {
-            #[cfg(not(feature = "nohook-ecp-mul"))]
+            #[cfg(mbedtls_hook = "ecp_mul")]
             unsafe {
-                crate::hook::ecp::hook_ecp_mul(None);
+                mbedtls_rs_sys::hook::ecp::hook_ecp_mul(None);
             }
-            #[cfg(not(feature = "nohook-ecp-verify"))]
+            #[cfg(mbedtls_hook = "ecp_verify")]
             unsafe {
-                crate::hook::ecp::hook_ecp_verify(None);
+                mbedtls_rs_sys::hook::ecp::hook_ecp_verify(None);
             }
         }
     }

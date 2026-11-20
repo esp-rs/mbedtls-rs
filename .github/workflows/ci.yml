@@ -91,11 +91,16 @@ jobs:
       - name: Check - defmt
         run: cargo check -p mbedtls-rs --features defmt
 
+      # The hooks are off by default; test the hook layer and its software
+      # fallbacks with all of them on.
+      - name: Test - all hooks
+        run: cargo test -p mbedtls-rs -p mbedtls-rs-sys --features mbedtls-rs-sys/hook-sha1,mbedtls-rs-sys/hook-sha256,mbedtls-rs-sys/hook-sha512,mbedtls-rs-sys/hook-exp-mod,mbedtls-rs-sys/hook-aes,mbedtls-rs-sys/hook-ecp-mul,mbedtls-rs-sys/hook-ecp-verify
+
       # Host-only test of the ESP exp_mod routing logic (`_route-test` mounts
-      # `backend::esp::exp_mod_route` without `esp-hal`); not part of the
-      # default feature set, so it needs its own invocation.
+      # `exp_mod_route` without `esp-hal`); not part of the default feature
+      # set, so it needs its own invocation.
       - name: Test - ESP exp_mod routing
-        run: cargo test -p mbedtls-rs-sys --features _route-test --test exp_mod_route
+        run: cargo test -p mbedtls-rs-sys-esp --features _route-test --test exp_mod_route
 
       - name: Fmt Check - STD Examples
         run: cd examples/std; cargo fmt -- --check
@@ -259,10 +264,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # [family, the `--features` argument selecting the chip, target].
+        # [family, the `cargo` arguments selecting the chip or the packages, target].
         #
         # The `arm` entries have neither a chip feature nor examples of their own: no `esp-hal`
-        # backend applies to them, so they build the two libraries alone. They cover the two
+        # backend applies to them, so they build the two libraries alone (`mbedtls-rs-sys-esp`
+        # does not build for bare-metal targets without a chip). They cover the two
         # bare-metal ARM targets prebuilt libraries are committed for, and with them the
         # short-enum ABI, which `bindgen` has to be told about separately from the C compiler
         # and which applies to `-eabi`/`-eabihf` targets only.
@@ -277,9 +283,9 @@ jobs:
 # No Wifi support on esp32h2
 #          - [esp, "--features esp32h2", riscv32imac-unknown-none-elf]
           # Raspberry Pi Pico
-          - [arm, "", thumbv6m-none-eabi]
+          - [arm, "-p mbedtls-rs -p mbedtls-rs-sys", thumbv6m-none-eabi]
           # nRF52
-          - [arm, "", thumbv7em-none-eabi]
+          - [arm, "-p mbedtls-rs -p mbedtls-rs-sys", thumbv7em-none-eabi]
     steps:
       - uses: actions/checkout@v4
 

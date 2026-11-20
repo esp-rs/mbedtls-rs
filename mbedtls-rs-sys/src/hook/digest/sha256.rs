@@ -17,7 +17,7 @@ impl<T: Deref> MbedtlsSha224 for T where T::Target: MbedtlsSha224 {}
 ///   the behavior of MbedTLS. The caller MUST call this hook BEFORE
 ///   any MbedTLS functions that use SHA-256 or SHA-224, and ensure that the
 ///   `sha256` or `sha224` implementation is valid for the duration of its use.
-#[cfg(all(feature = "alg-sha256", not(feature = "nohook-sha256")))]
+#[cfg(mbedtls_hook = "sha256")]
 pub unsafe fn hook_sha256(sha256: Option<&'static (dyn MbedtlsSha256 + Send + Sync)>) {
     critical_section::with(|cs| {
         #[allow(clippy::if_same_then_else)]
@@ -38,7 +38,7 @@ pub unsafe fn hook_sha256(sha256: Option<&'static (dyn MbedtlsSha256 + Send + Sy
 ///   the behavior of MbedTLS. The caller MUST call this hook BEFORE
 ///   any MbedTLS functions that use SHA-224, and ensure that the
 ///   `sha224` implementation is valid for the duration of its use.
-#[cfg(all(feature = "alg-sha256", not(feature = "nohook-sha256")))]
+#[cfg(mbedtls_hook = "sha256")]
 pub unsafe fn hook_sha224(sha224: Option<&'static (dyn MbedtlsSha224 + Send + Sync)>) {
     critical_section::with(|cs| {
         #[allow(clippy::if_same_then_else)]
@@ -52,10 +52,10 @@ pub unsafe fn hook_sha224(sha224: Option<&'static (dyn MbedtlsSha224 + Send + Sy
     });
 }
 
-#[cfg(all(feature = "alg-sha256", not(feature = "nohook-sha256")))]
+#[cfg(mbedtls_hook = "sha256")]
 pub use alt::{SoftSha224, SoftSha256};
 
-#[cfg(all(feature = "alg-sha256", not(feature = "nohook-sha256")))]
+#[cfg(mbedtls_hook = "sha256")]
 mod alt {
     use core::cell::Cell;
     use core::ffi::{c_int, c_uchar};

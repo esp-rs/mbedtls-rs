@@ -6,9 +6,11 @@
 
 use esp_hal::aes::{cipher_modes, AesContext, Key, Operation};
 
-use crate::hook::aes::{AesBlock, MbedtlsAes, SoftAesState, AES_BLOCK_SIZE};
-use crate::hook::{WorkArea, WorkAreaMemory};
-use crate::{MbedtlsError, MBEDTLS_ERR_AES_BAD_INPUT_DATA, MBEDTLS_ERR_AES_INVALID_KEY_LENGTH};
+use mbedtls_rs_sys::hook::aes::{AesBlock, MbedtlsAes, SoftAesState, AES_BLOCK_SIZE};
+use mbedtls_rs_sys::hook::{WorkArea, WorkAreaMemory};
+use mbedtls_rs_sys::{
+    MbedtlsError, MBEDTLS_ERR_AES_BAD_INPUT_DATA, MBEDTLS_ERR_AES_INVALID_KEY_LENGTH,
+};
 
 /// Whether the AES peripheral supports 192-bit keys.
 ///
@@ -207,9 +209,7 @@ impl MbedtlsAes for EspAes {
                 Ok(())
             }
             EspAesState::Soft(soft) => {
-                for block in data.chunks_exact_mut(AES_BLOCK_SIZE) {
-                    let block: &mut AesBlock = block.try_into().unwrap();
-
+                for block in data.as_chunks_mut::<AES_BLOCK_SIZE>().0 {
                     for (b, i) in block.iter_mut().zip(iv.iter()) {
                         *b ^= *i;
                     }
@@ -247,9 +247,7 @@ impl MbedtlsAes for EspAes {
                 Ok(())
             }
             EspAesState::Soft(soft) => {
-                for block in data.chunks_exact_mut(AES_BLOCK_SIZE) {
-                    let block: &mut AesBlock = block.try_into().unwrap();
-
+                for block in data.as_chunks_mut::<AES_BLOCK_SIZE>().0 {
                     let ct = *block;
                     soft.decrypt(block)?;
                     for (b, i) in block.iter_mut().zip(iv.iter()) {

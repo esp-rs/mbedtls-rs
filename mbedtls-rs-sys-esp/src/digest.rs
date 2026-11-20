@@ -7,8 +7,8 @@
 use core::marker::PhantomData;
 use core::ptr::drop_in_place;
 
-use crate::hook::digest::MbedtlsDigest;
-use crate::hook::{WorkArea, WorkAreaMemory};
+use mbedtls_rs_sys::hook::digest::MbedtlsDigest;
+use mbedtls_rs_sys::hook::{WorkArea, WorkAreaMemory};
 
 /// An `esp-hal` SHA work-queue context, as driven by [`EspDigest`]
 pub trait EspShaContext: Clone {
@@ -146,12 +146,12 @@ pub type EspSha384 = EspDigest<esp_hal::sha::Sha384Context>;
 pub type EspSha512 = EspDigest<esp_hal::sha::Sha512Context>;
 
 #[cfg(not(feature = "esp32"))]
-impl crate::hook::digest::MbedtlsSha1 for EspSha1 {}
+impl mbedtls_rs_sys::hook::digest::MbedtlsSha1 for EspSha1 {}
 #[cfg(not(feature = "esp32"))]
-impl crate::hook::digest::MbedtlsSha224 for EspSha224 {}
+impl mbedtls_rs_sys::hook::digest::MbedtlsSha224 for EspSha224 {}
 #[cfg(not(feature = "esp32"))]
-impl crate::hook::digest::MbedtlsSha256 for EspSha256 {}
+impl mbedtls_rs_sys::hook::digest::MbedtlsSha256 for EspSha256 {}
 #[cfg(any(feature = "esp32s2", feature = "esp32s3"))]
-impl crate::hook::digest::MbedtlsSha384 for EspSha384 {}
+impl mbedtls_rs_sys::hook::digest::MbedtlsSha384 for EspSha384 {}
 #[cfg(any(feature = "esp32s2", feature = "esp32s3"))]
-impl crate::hook::digest::MbedtlsSha512 for EspSha512 {}
+impl mbedtls_rs_sys::hook::digest::MbedtlsSha512 for EspSha512 {}
