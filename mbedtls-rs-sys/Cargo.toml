@@ -275,7 +275,7 @@ embassy-time = {workspace = true, optional = true }
 # ESP-IDF: The mbedtls lib distributed with ESP-IDF is used
 # All other platforms: mbedtls libs and bindings are created on the fly
 [target.'cfg(target_os = "espidf")'.dependencies]
-esp-idf-sys = { version = "0.38", default-features = false }
+esp-idf-sys = { version = ">=0.38, <0.40", default-features = false }
 
 [dev-dependencies]
 # The hook dispatch uses `critical_section`; provide the std implementation

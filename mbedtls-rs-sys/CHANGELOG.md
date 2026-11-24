@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+* Accept `esp-idf-sys` 0.39 as well as 0.38
 * (Breaking) The algorithm hooks are opt-in: the `hook-sha1`, `hook-sha256`, `hook-sha512`, `hook-exp-mod`, `hook-aes`, `hook-ecp-mul` and `hook-ecp-verify` features replace the `nohook*` features. The prebuilt libraries still have all of them
 * (Breaking) Move the ESP hardware acceleration (`hook::backend::esp` and the `esp32*` features) to the new `mbedtls-rs-sys-esp` crate
 * Publish the installed hooks as the `hooks` metadata key (`DEP_MBEDTLS_HOOKS`)
