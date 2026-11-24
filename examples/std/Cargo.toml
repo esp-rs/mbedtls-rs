@@ -32,7 +32,7 @@ futures-lite = "2"
 env_logger = "0.11"
 
 [target.'cfg(target_os = "espidf")'.dependencies]
-esp-idf-svc = "0.53"
+esp-idf-svc = "0.54"
 
 [build-dependencies]
-embuild = { version = "0.33.5", features = ["espidf"] }
+embuild = { version = "0.33.7", features = ["espidf"] }
