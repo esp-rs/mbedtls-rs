@@ -32,6 +32,8 @@ Note that for the latter, you DO need to have the GCC cross-compiler flavor for 
 
 The on-the-fly compilation process also needs `cmake` (3.19 or newer) and `ninja` pre-installed (for now).
 
+On macOS, the `clang` build also needs the `llvm-tools` rustup component (`rustup component add llvm-tools`), or a non-Apple `clang` such as Homebrew's LLVM first on `$PATH`: Apple's `ar` silently drops the ELF objects of the C library.
+
 ESP-IDF is also supported and in that case `mbedtls-rs-sys` becomes just an alias for `esp-idf-sys` and uses the MbedTLS library which is built-in inside ESP-IDF.
 
 **NOTE:**: on-the-fly compilation can be forced by using the `force-generate-bindings` feature.
