@@ -110,7 +110,7 @@ mod alt {
                     x,
                     y,
                     m,
-                    prec_rr.map(|rr| rr as *mut _).unwrap_or_default(),
+                    prec_rr.map_or(core::ptr::null_mut(), |rr| rr as *mut _),
                 )
             })?;
 

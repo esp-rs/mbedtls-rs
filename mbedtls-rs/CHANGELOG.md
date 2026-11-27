@@ -5,7 +5,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-11-27
+* Update MSRV to 1.86, as in `mbedtls-rs-sys`
 * (Breaking) The `hook-sha1`, `hook-sha256`, `hook-sha512`, `hook-exp-mod`, `hook-aes`, `hook-ecp-mul` and `hook-ecp-verify` features replace the `nohook*` features, as in `mbedtls-rs-sys`
 * (Breaking) Remove the `esp32*` features. The ESP hardware acceleration is in the new `mbedtls-rs-sys-esp` crate
 * (Breaking) `ClientSessionConfig::creds` and `ServerSessionConfig::creds` are now `authentication`, an `Authentication`: a certificate (`Authentication::Certificate`, or `.into()` from `Credentials`) or, with the `kex-ecjpake` feature, an EC J-PAKE password (`Authentication::EcJpake`), as in Thread commissioning. `ServerSessionConfig::new` takes it

@@ -1,9 +1,9 @@
 [package]
 name = "mbedtls-rs"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-rust-version = "1.85"
+rust-version = "1.86"
 description = "Rust library implementing transparent TLS encryption/decryption for IO streams with MbedTLS"
 repository = "https://github.com/esp-rs/mbedtls-rs"
 readme = "README.md"
