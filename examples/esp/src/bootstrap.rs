@@ -27,9 +27,12 @@ use esp_hal::rtc_cntl::Rtc;
 #[cfg(not(feature = "esp32c5"))]
 use esp_hal::timer::timg::TimerGroup;
 
-#[cfg(not(feature = "esp32c5"))]
-use mbedtls_rs::sys::hook::backend::embassy::timer::EmbassyTimer;
 use mbedtls_rs::Tls;
+#[cfg(not(feature = "esp32c5"))]
+use mbedtls_rs_sys_embassy::timer::EmbassyTimer;
+// The timer is not used on the esp32c5
+#[cfg(feature = "esp32c5")]
+use mbedtls_rs_sys_embassy as _;
 #[cfg(not(feature = "esp32c5"))]
 use mbedtls_rs_sys_esp::wall_clock::EspRtcWallClock;
 use mbedtls_rs_sys_esp::EspAccel;

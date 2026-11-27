@@ -9,14 +9,16 @@
 //! with all the crypto hooks, so a build that uses them has all of them.
 //!
 //! Crypto algorithms that remain "un-hooked" by the user fall back to the software
-//! implementations of MbedTLS itself. For the whole-module `_ALT` hooks (the digests and
-//! AES), MbedTLS would normally compile its own implementation out; the crate keeps it by
+//! implementations of MbedTLS itself. For the `_ALT` hooks (the digests, AES, ECDSA and
+//! ECDH), MbedTLS would normally compile its own implementation out; the crate keeps it by
 //! compiling those modules a second time under `mbedtls_*_soft_*` symbol names (see
 //! `SoftFallback` in `gen/builder.rs`) and forwarding to them.
 
 pub mod aes;
 pub mod backend;
 pub mod digest;
+pub mod ecdh;
+pub mod ecdsa;
 pub mod ecp;
 pub mod exp_mod;
 #[cfg(feature = "hook-timer")]

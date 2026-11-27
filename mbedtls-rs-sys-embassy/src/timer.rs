@@ -1,15 +1,17 @@
-use crate::hook::timer::MbedtlsTimer;
-use crate::mbedtls_ms_time_t;
+//! Monotonic timer over `embassy-time`.
+
+use mbedtls_rs_sys::hook::timer::MbedtlsTimer;
+use mbedtls_rs_sys::mbedtls_ms_time_t;
 
 /// Embassy-based timer backend for MbedTLS timeout operations.
 ///
 /// Uses `embassy_time::Instant` to provide monotonic millisecond timing.
 ///
 /// # Usage
-/// ```no_run
-/// use esp_mbedtls_sys::timer::{hook_timer, embassy::EmbassyTimer};
+/// ```ignore
+/// use mbedtls_rs_sys::hook::timer::hook_timer;
+/// use mbedtls_rs_sys_embassy::timer::EmbassyTimer;
 ///
-/// // Create a static timer instance (using static_cell or similar)
 /// static TIMER: EmbassyTimer = EmbassyTimer;
 ///
 /// unsafe {

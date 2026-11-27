@@ -40,7 +40,7 @@ default = ["tls"]
 prebuilt = [
     "tls",
     "hook-sha1", "hook-sha256", "hook-sha512", "hook-exp-mod", "hook-aes",
-    "hook-ecp-mul", "hook-ecp-verify",
+    "hook-ecp-mul", "hook-ecp-verify", "hook-ecdsa", "hook-ecdh",
 ]
 
 # ─── TLS record buffer sizing (per-connection RAM) ───
@@ -92,6 +92,8 @@ hook-exp-mod = []      # MPI modular exponentiation (RSA, DHM)
 hook-aes = []
 hook-ecp-mul = []      # ECP scalar multiplication
 hook-ecp-verify = []   # ECP public key check
+hook-ecdsa = []        # ECDSA signing and verification (not with `ecp-restartable`)
+hook-ecdh = []         # ECDH key pair generation and shared secret (not with `ecp-restartable`)
 # Timer and wall-clock hooks for custom time implementations
 hook-timer = []
 hook-wall-clock = ["hook-timer"] # 'hook-wall-clock' feature requires 'hook-timer' to be enabled. MbedTLS X.509 certificate validation requires both time() and gmtime_r() functions.
@@ -268,9 +270,6 @@ log = { workspace = true, default-features = false, optional = true }
 enumset = { workspace = true, default-features = false }
 time = { workspace = true, default-features = false, optional = true }
 critical-section = { workspace = true }
-
-# For embassy timer hook impl
-embassy-time = {workspace = true, optional = true }
 
 # ESP-IDF: The mbedtls lib distributed with ESP-IDF is used
 # All other platforms: mbedtls libs and bindings are created on the fly

@@ -10,7 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Accept `esp-idf-sys` 0.39 as well as 0.38
 * (Breaking) The algorithm hooks are opt-in: the `hook-sha1`, `hook-sha256`, `hook-sha512`, `hook-exp-mod`, `hook-aes`, `hook-ecp-mul` and `hook-ecp-verify` features replace the `nohook*` features. The prebuilt libraries still have all of them
 * (Breaking) Move the ESP hardware acceleration (`hook::backend::esp` and the `esp32*` features) to the new `mbedtls-rs-sys-esp` crate
+* (Breaking) Move the `embassy-time` timer (`hook::backend::embassy::timer::EmbassyTimer` and the `embassy-time` feature) to the new `mbedtls-rs-sys-embassy` crate
 * Publish the installed hooks as the `hooks` metadata key (`DEP_MBEDTLS_HOOKS`)
+* Add ECDSA (`hook_ecdsa`, feature `hook-ecdsa`) and ECDH (`hook_ecdh`, feature `hook-ecdh`) hooks, with the MbedTLS software implementations as the fallback. The prebuilt libraries have them too
 * Support the `*-windows-msvc` targets: MbedTLS is compiled on the fly with clang, as for other targets
 * On ESP-IDF, pass ESP-IDF's configuration on to dependents (`DEP_MBEDTLS_EMBUILD_CFG_ARGS`)
 * (Breaking) Add a `tls-sni` feature for `MBEDTLS_SSL_SERVER_NAME_INDICATION`, which `tls-core` no longer enables. The `tls` bundle (and so the default features) include it, so only builds that select `tls-core` on its own need to add `tls-sni` to keep sending the server name
