@@ -149,14 +149,16 @@ hook-exp-mod = ["mbedtls-rs-sys/hook-exp-mod"]
 hook-aes = ["mbedtls-rs-sys/hook-aes"]
 hook-ecp-mul = ["mbedtls-rs-sys/hook-ecp-mul"]
 hook-ecp-verify = ["mbedtls-rs-sys/hook-ecp-verify"]
+hook-ecdsa = ["mbedtls-rs-sys/hook-ecdsa"]
+hook-ecdh = ["mbedtls-rs-sys/hook-ecdh"]
 hook-timer = ["mbedtls-rs-sys/hook-timer"]
 hook-wall-clock = ["mbedtls-rs-sys/hook-wall-clock"]
 
 # STD hook impls
 std = ["mbedtls-rs-sys/std"]
 
-# embassy-time hook impls, and `dtls::EmbassyClock`
-embassy-time = ["mbedtls-rs-sys/embassy-time", "dep:embassy-time"]
+# `dtls::EmbassyClock`
+embassy-time = ["dep:embassy-time"]
 
 [dependencies]
 # Algorithm surface is selected by the consumer via this crate's bundle/leaf

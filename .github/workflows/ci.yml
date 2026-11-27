@@ -73,6 +73,11 @@ jobs:
       - name: Clippy
         run: cargo clippy -- -D warnings
 
+      # The code of `mbedtls-rs-sys-embassy` (and its tests) is compiled only for
+      # the hooks that are installed, which are off by default.
+      - name: Clippy - Embassy hooks
+        run: cargo clippy -p mbedtls-rs-sys-embassy --all-targets --features mbedtls-rs-sys/hook-sha1,mbedtls-rs-sys/hook-sha256,mbedtls-rs-sys/hook-sha512,mbedtls-rs-sys/hook-aes,mbedtls-rs-sys/hook-ecp-mul,mbedtls-rs-sys/hook-ecdsa,mbedtls-rs-sys/hook-ecdh,mbedtls-rs-sys/hook-timer -- -D warnings
+
       - name: Build
         run: cargo build
 
@@ -92,9 +97,10 @@ jobs:
         run: cargo check -p mbedtls-rs --features defmt
 
       # The hooks are off by default; test the hook layer and its software
-      # fallbacks with all of them on.
+      # fallbacks with all of them on, and the `embassy-crypto` hook
+      # implementations over the software drivers of `embassy-crypto-rustcrypto`.
       - name: Test - all hooks
-        run: cargo test -p mbedtls-rs -p mbedtls-rs-sys --features mbedtls-rs-sys/hook-sha1,mbedtls-rs-sys/hook-sha256,mbedtls-rs-sys/hook-sha512,mbedtls-rs-sys/hook-exp-mod,mbedtls-rs-sys/hook-aes,mbedtls-rs-sys/hook-ecp-mul,mbedtls-rs-sys/hook-ecp-verify
+        run: cargo test -p mbedtls-rs -p mbedtls-rs-sys -p mbedtls-rs-sys-embassy --features mbedtls-rs-sys/hook-sha1,mbedtls-rs-sys/hook-sha256,mbedtls-rs-sys/hook-sha512,mbedtls-rs-sys/hook-exp-mod,mbedtls-rs-sys/hook-aes,mbedtls-rs-sys/hook-ecp-mul,mbedtls-rs-sys/hook-ecp-verify,mbedtls-rs-sys/hook-ecdsa,mbedtls-rs-sys/hook-ecdh
 
       # Host-only test of the ESP exp_mod routing logic (`_route-test` mounts
       # `exp_mod_route` without `esp-hal`); not part of the default feature

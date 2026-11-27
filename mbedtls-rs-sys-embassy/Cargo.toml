@@ -1,0 +1,36 @@
+[package]
+name = "mbedtls-rs-sys-embassy"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+rust-version = "1.95"
+description = "MbedTLS hooks for the Embassy ecosystem: acceleration with the embassy-crypto drivers, and an embassy-time timer"
+repository = "https://github.com/esp-rs/mbedtls-rs"
+readme = "README.md"
+keywords = ["mbedtls", "embassy", "embedded", "no-std", "crypto"]
+categories = ["cryptography", "embedded", "no-std", "hardware-support"]
+
+[dependencies]
+mbedtls-rs-sys = { workspace = true }
+embassy-crypto = { workspace = true }
+embassy-time = { workspace = true }
+
+[dev-dependencies]
+# The full profile. The tests of a hook only run if it is installed: enable
+# the `hook-*` features of `mbedtls-rs-sys` (not done here, as they would apply
+# to the tests of the whole workspace).
+mbedtls-rs-sys = { workspace = true, features = ["tls"] }
+# The hook dispatch uses `critical_section`; provide the std implementation
+# for the host-side tests
+critical-section = { workspace = true, features = ["std"] }
+# The software drivers behind the hooks in the host-side tests
+embassy-crypto-rustcrypto = { workspace = true, features = [
+    "embassy-crypto-sha1", "embassy-crypto-sha224", "embassy-crypto-sha256",
+    "embassy-crypto-sha384", "embassy-crypto-sha512",
+    "embassy-crypto-aes128-ecb", "embassy-crypto-aes256-ecb",
+    "embassy-crypto-p256-arith", "embassy-crypto-p384-arith",
+    "embassy-crypto-p256-ecdsa", "embassy-crypto-p384-ecdsa",
+    "embassy-crypto-p256-ecdh", "embassy-crypto-p384-ecdh",
+] }
+# The RNG driver the ECDSA drivers draw their nonces from
+embassy-crypto-rand = { workspace = true }

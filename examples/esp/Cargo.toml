@@ -34,17 +34,20 @@ esp-println = { git = "https://github.com/esp-rs/esp-hal", rev = "0fed45c84c0723
 esp-radio = { git = "https://github.com/esp-rs/esp-hal", rev = "0fed45c84c0723ed4e0b7d19c7f3078ed79090c6" }
 esp-bootloader-esp-idf = { git = "https://github.com/esp-rs/esp-hal", rev = "0fed45c84c0723ed4e0b7d19c7f3078ed79090c6" }
 esp-metadata-generated = { git = "https://github.com/esp-rs/esp-hal", rev = "0fed45c84c0723ed4e0b7d19c7f3078ed79090c6" }
+# crates.io only has a reserved 0.0.0 placeholder of `embassy-crypto` (a dependency of
+# `mbedtls-rs-sys-embassy`)
+embassy-crypto = { git = "https://github.com/embassy-rs/embassy", branch = "main" }
 
 [features]
 default = ["esp32c6"]
-esp32 = ["esp-rtos/esp32", "esp-hal/esp32", "esp-backtrace/esp32", "esp-println/esp32", "esp-radio/esp32", "esp-bootloader-esp-idf/esp32", "esp-metadata-generated/esp32", "mbedtls-rs-sys-esp/esp32", "mbedtls-rs/embassy-time"]
-esp32c2 = ["esp-rtos/esp32c2", "esp-hal/esp32c2", "esp-backtrace/esp32c2", "esp-println/esp32c2", "esp-radio/esp32c2", "esp-bootloader-esp-idf/esp32c2", "esp-metadata-generated/esp32c2", "mbedtls-rs-sys-esp/esp32c2", "mbedtls-rs/embassy-time"]
-esp32c3 = ["esp-rtos/esp32c3", "esp-hal/esp32c3", "esp-backtrace/esp32c3", "esp-println/esp32c3", "esp-radio/esp32c3", "esp-bootloader-esp-idf/esp32c3", "esp-metadata-generated/esp32c3", "mbedtls-rs-sys-esp/esp32c3", "mbedtls-rs/embassy-time"]
-esp32c5 = ["esp-rtos/esp32c5", "esp-hal/esp32c5", "esp-backtrace/esp32c5", "esp-println/esp32c5", "esp-radio/esp32c5", "esp-bootloader-esp-idf/esp32c5", "esp-metadata-generated/esp32c5", "mbedtls-rs-sys-esp/esp32c5", "mbedtls-rs/embassy-time"]
-esp32c6 = ["esp-rtos/esp32c6", "esp-hal/esp32c6", "esp-backtrace/esp32c6", "esp-println/esp32c6", "esp-radio/esp32c6", "esp-bootloader-esp-idf/esp32c6", "esp-metadata-generated/esp32c6", "mbedtls-rs-sys-esp/esp32c6", "mbedtls-rs/embassy-time"]
-esp32h2 = ["esp-rtos/esp32h2", "esp-hal/esp32h2", "esp-backtrace/esp32h2", "esp-println/esp32h2", "esp-radio/esp32h2", "esp-bootloader-esp-idf/esp32h2", "esp-metadata-generated/esp32h2", "mbedtls-rs-sys-esp/esp32h2", "mbedtls-rs/embassy-time"]
-esp32s2 = ["esp-rtos/esp32s2", "esp-hal/esp32s2", "esp-backtrace/esp32s2", "esp-println/esp32s2", "esp-radio/esp32s2", "esp-bootloader-esp-idf/esp32s2", "esp-metadata-generated/esp32s2", "mbedtls-rs-sys-esp/esp32s2", "mbedtls-rs/embassy-time"]
-esp32s3 = ["esp-rtos/esp32s3", "esp-hal/esp32s3", "esp-backtrace/esp32s3", "esp-println/esp32s3", "esp-radio/esp32s3", "esp-bootloader-esp-idf/esp32s3", "esp-metadata-generated/esp32s3", "mbedtls-rs-sys-esp/esp32s3", "mbedtls-rs/embassy-time"]
+esp32 = ["esp-rtos/esp32", "esp-hal/esp32", "esp-backtrace/esp32", "esp-println/esp32", "esp-radio/esp32", "esp-bootloader-esp-idf/esp32", "esp-metadata-generated/esp32", "mbedtls-rs-sys-esp/esp32"]
+esp32c2 = ["esp-rtos/esp32c2", "esp-hal/esp32c2", "esp-backtrace/esp32c2", "esp-println/esp32c2", "esp-radio/esp32c2", "esp-bootloader-esp-idf/esp32c2", "esp-metadata-generated/esp32c2", "mbedtls-rs-sys-esp/esp32c2"]
+esp32c3 = ["esp-rtos/esp32c3", "esp-hal/esp32c3", "esp-backtrace/esp32c3", "esp-println/esp32c3", "esp-radio/esp32c3", "esp-bootloader-esp-idf/esp32c3", "esp-metadata-generated/esp32c3", "mbedtls-rs-sys-esp/esp32c3"]
+esp32c5 = ["esp-rtos/esp32c5", "esp-hal/esp32c5", "esp-backtrace/esp32c5", "esp-println/esp32c5", "esp-radio/esp32c5", "esp-bootloader-esp-idf/esp32c5", "esp-metadata-generated/esp32c5", "mbedtls-rs-sys-esp/esp32c5"]
+esp32c6 = ["esp-rtos/esp32c6", "esp-hal/esp32c6", "esp-backtrace/esp32c6", "esp-println/esp32c6", "esp-radio/esp32c6", "esp-bootloader-esp-idf/esp32c6", "esp-metadata-generated/esp32c6", "mbedtls-rs-sys-esp/esp32c6"]
+esp32h2 = ["esp-rtos/esp32h2", "esp-hal/esp32h2", "esp-backtrace/esp32h2", "esp-println/esp32h2", "esp-radio/esp32h2", "esp-bootloader-esp-idf/esp32h2", "esp-metadata-generated/esp32h2", "mbedtls-rs-sys-esp/esp32h2"]
+esp32s2 = ["esp-rtos/esp32s2", "esp-hal/esp32s2", "esp-backtrace/esp32s2", "esp-println/esp32s2", "esp-radio/esp32s2", "esp-bootloader-esp-idf/esp32s2", "esp-metadata-generated/esp32s2", "mbedtls-rs-sys-esp/esp32s2"]
+esp32s3 = ["esp-rtos/esp32s3", "esp-hal/esp32s3", "esp-backtrace/esp32s3", "esp-println/esp32s3", "esp-radio/esp32s3", "esp-bootloader-esp-idf/esp32s3", "esp-metadata-generated/esp32s3", "mbedtls-rs-sys-esp/esp32s3"]
 
 [dependencies]
 log = "0.4"
@@ -55,6 +58,7 @@ enumset = { version = "1", default-features = false }
 rand_core = "0.10.1"
 mbedtls-rs = { path = "../../mbedtls-rs", features = ["log", "hook-wall-clock"] }
 mbedtls-rs-sys-esp = { path = "../../mbedtls-rs-sys-esp" }
+mbedtls-rs-sys-embassy = { path = "../../mbedtls-rs-sys-embassy" }
 sha1 = { version = "0.11", default-features = false }
 tinyrlibc = { version = "0.5", default-features = false, features = ["memchr"] }
 
